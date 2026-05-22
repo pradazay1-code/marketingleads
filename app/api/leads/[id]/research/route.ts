@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, updateRow, insertRow } from "@/lib/db";
 import { researchLead } from "@/lib/research/aiResearch";
 import { isEastCoast } from "@/lib/keywords";
 import type { Lead } from "@/lib/types";
@@ -12,14 +12,18 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { data: lead, error } = await db().from("leads").select("*").eq("id", id).single();
-  if (error || !lead) return NextResponse.json({ error: "lead not found" }, { status: 404 });
+  const sql = db();
+  const leadRows = (await sql`SELECT * FROM leads WHERE id = ${id}`) as Lead[];
+  if (leadRows.length === 0) {
+    return NextResponse.json({ error: "lead not found" }, { status: 404 });
+  }
+  const lead = leadRows[0];
 
-  await db().from("leads").update({ research_status: "in_progress" }).eq("id", id);
+  await sql`UPDATE leads SET research_status = 'in_progress' WHERE id = ${id}`;
 
   try {
-    const r = await researchLead(lead as Lead);
-    const updated = {
+    const r = await researchLead(lead);
+    const updated = await updateRow<Lead>("leads", id, {
       company_name: r.company_name ?? lead.company_name,
       person_name: r.person_name ?? lead.person_name,
       website: r.website ?? lead.website,
@@ -38,33 +42,24 @@ export async function POST(
       lead_score: r.lead_score,
       score_breakdown: r.score_breakdown,
       last_researched_at: new Date().toISOString(),
-    };
-    const { data: leadOut } = await db()
-      .from("leads")
-      .update(updated)
-      .eq("id", id)
-      .select("*")
-      .single();
-    const { data: activity } = await db()
-      .from("lead_activities")
-      .insert({
-        lead_id: id,
-        type: "research_update",
-        title: "Manual re-research completed",
-        content: r.summary,
-        metadata: r,
-        created_by: "user",
-      })
-      .select("*")
-      .single();
+    });
+    const activity = await insertRow("lead_activities", {
+      lead_id: id,
+      type: "research_update",
+      title: "Manual re-research completed",
+      content: r.summary,
+      metadata: r,
+      created_by: "user",
+    });
 
-    return NextResponse.json({ lead: leadOut, activity });
+    return NextResponse.json({ lead: updated, activity });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await db()
-      .from("leads")
-      .update({ research_status: "failed", research_summary: `Error: ${msg}` })
-      .eq("id", id);
+    await sql`
+      UPDATE leads
+      SET research_status = 'failed', research_summary = ${`Error: ${msg}`}
+      WHERE id = ${id}
+    `;
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

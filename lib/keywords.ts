@@ -54,15 +54,11 @@ let cached: { at: number; data: Pick<Keyword, "phrase" | "category" | "weight">[
 export async function loadKeywords(): Promise<Pick<Keyword, "phrase" | "category" | "weight">[]> {
   if (cached && Date.now() - cached.at < 5 * 60_000) return cached.data;
   try {
-    const { data, error } = await db()
-      .from("keywords")
-      .select("phrase, category, weight")
-      .eq("enabled", true);
-    if (error) throw error;
-    const list = (data && data.length > 0 ? data : FALLBACK_KEYWORDS) as Pick<
-      Keyword,
-      "phrase" | "category" | "weight"
-    >[];
+    const sql = db();
+    const data = (await sql`
+      SELECT phrase, category, weight FROM keywords WHERE enabled = true
+    `) as Array<Pick<Keyword, "phrase" | "category" | "weight">>;
+    const list = data.length > 0 ? data : FALLBACK_KEYWORDS;
     cached = { at: Date.now(), data: list };
     return list;
   } catch {

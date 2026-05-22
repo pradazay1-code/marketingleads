@@ -1,6 +1,7 @@
 -- =============================================================
--- AVENTIS LEADS — database schema
--- Run this once in Supabase → SQL Editor after creating your project.
+-- AVENTIS LEADS — database schema (Postgres)
+-- Run this once in Neon → SQL Editor after creating your project.
+-- Works on any Postgres (Neon, Supabase, RDS, local).
 -- =============================================================
 
 create extension if not exists "pgcrypto";
@@ -255,45 +256,5 @@ insert into sources (name, type, config) values
   ('Indie Hackers — Posts', 'indiehackers', '{"limit":50}')
 on conflict (name) do nothing;
 
--- =============================================================
--- RLS: enable, then allow service role full access.
--- The UI uses anon key (read-only by default — extend as needed).
--- =============================================================
-alter table leads enable row level security;
-alter table lead_activities enable row level security;
-alter table opportunities enable row level security;
-alter table generation_runs enable row level security;
-alter table keywords enable row level security;
-alter table sources enable row level security;
-alter table notifications enable row level security;
-alter table system_log enable row level security;
-
-drop policy if exists "service_role_all_leads" on leads;
-create policy "service_role_all_leads" on leads for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
-
-drop policy if exists "anon_read_leads" on leads;
-create policy "anon_read_leads" on leads for select using (true);
-
-drop policy if exists "anon_update_leads" on leads;
-create policy "anon_update_leads" on leads for update using (true) with check (true);
-
-drop policy if exists "anon_all_activities" on lead_activities;
-create policy "anon_all_activities" on lead_activities for all using (true) with check (true);
-
-drop policy if exists "anon_all_opps" on opportunities;
-create policy "anon_all_opps" on opportunities for all using (true) with check (true);
-
-drop policy if exists "anon_read_runs" on generation_runs;
-create policy "anon_read_runs" on generation_runs for select using (true);
-
-drop policy if exists "anon_all_keywords" on keywords;
-create policy "anon_all_keywords" on keywords for all using (true) with check (true);
-
-drop policy if exists "anon_all_sources" on sources;
-create policy "anon_all_sources" on sources for all using (true) with check (true);
-
-drop policy if exists "anon_read_notifications" on notifications;
-create policy "anon_read_notifications" on notifications for select using (true);
-
-drop policy if exists "anon_read_log" on system_log;
-create policy "anon_read_log" on system_log for select using (true);
+-- Neon doesn't have built-in auth like Supabase, so no row-level security
+-- policies are needed. Access is gated by who has DATABASE_URL (env vars only).

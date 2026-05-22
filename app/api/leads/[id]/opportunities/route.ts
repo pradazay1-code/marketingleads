@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, insertRow } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +19,8 @@ export async function POST(
     notes?: string;
   };
 
-  const { data, error } = await db()
-    .from("opportunities")
-    .insert({
+  try {
+    const opportunity = await insertRow("opportunities", {
       lead_id: leadId,
       name: body.name,
       service_type: body.service_type ?? null,
@@ -31,20 +30,21 @@ export async function POST(
       stage: body.stage ?? "discovery",
       expected_close_date: body.expected_close_date ?? null,
       notes: body.notes ?? null,
-    })
-    .select("*")
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    });
 
-  // Bump lead to opportunity stage
-  await db().from("leads").update({ status: "opportunity" }).eq("id", leadId);
-  await db().from("lead_activities").insert({
-    lead_id: leadId,
-    type: "opportunity_created",
-    title: `Opportunity created: ${body.name}`,
-    metadata: data,
-    created_by: "user",
-  });
+    const sql = db();
+    await sql`UPDATE leads SET status = 'opportunity' WHERE id = ${leadId}`;
+    await insertRow("lead_activities", {
+      lead_id: leadId,
+      type: "opportunity_created",
+      title: `Opportunity created: ${body.name}`,
+      metadata: opportunity,
+      created_by: "user",
+    });
 
-  return NextResponse.json({ opportunity: data });
+    return NextResponse.json({ opportunity });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

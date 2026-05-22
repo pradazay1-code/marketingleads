@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { insertRow, updateRowsByIds } from "../db";
 import { sendNtfy } from "./ntfy";
 import { sendTelegram } from "./telegram";
 import { sendEmail } from "./resend";
@@ -75,7 +75,7 @@ export async function notifyBatch(opts: {
       html: buildEmailHtml(leads, dashboard, batchId, runId),
     });
     emailOk = emRes.ok;
-    await db().from("notifications").insert({
+    await insertRow("notifications", {
       channel: "email",
       recipient: emailTo,
       subject: `[Aventis Leads] ${leads.length} new qualified leads`,
@@ -90,7 +90,7 @@ export async function notifyBatch(opts: {
   }
 
   // Log the push channels too
-  await db().from("notifications").insert({
+  await insertRow("notifications", {
     channel: "ntfy",
     recipient: process.env.NTFY_TOPIC ?? null,
     subject: ntfyTitle,
@@ -101,7 +101,7 @@ export async function notifyBatch(opts: {
     batch_id: batchId,
     sent_at: ntfyRes.ok ? new Date().toISOString() : null,
   });
-  await db().from("notifications").insert({
+  await insertRow("notifications", {
     channel: "telegram",
     recipient: process.env.TELEGRAM_CHAT_ID ?? null,
     subject: ntfyTitle,
@@ -114,14 +114,11 @@ export async function notifyBatch(opts: {
   });
 
   if (ntfyRes.ok || tgRes.ok || emailOk) {
-    await db()
-      .from("leads")
-      .update({
-        notified: true,
-        notified_at: new Date().toISOString(),
-        notification_batch_id: batchId,
-      })
-      .in("id", leads.map((l) => l.id));
+    await updateRowsByIds("leads", leads.map((l) => l.id), {
+      notified: true,
+      notified_at: new Date().toISOString(),
+      notification_batch_id: batchId,
+    });
   }
 
   return { ntfyOk: ntfyRes.ok, telegramOk: tgRes.ok, emailOk };

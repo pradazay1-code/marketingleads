@@ -5,36 +5,35 @@ import type { Lead, GenerationRun } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 export default async function ResearchQueuePage() {
-  const supa = db();
-  const [pendingRes, inProgRes, runsRes] = await Promise.all([
-    supa
-      .from("leads")
-      .select("*")
-      .eq("research_status", "pending")
-      .order("lead_score", { ascending: false })
-      .limit(50),
-    supa
-      .from("leads")
-      .select("*")
-      .eq("research_status", "in_progress")
-      .limit(20),
-    supa
-      .from("generation_runs")
-      .select("*")
-      .order("started_at", { ascending: false })
-      .limit(20),
+  const sql = db();
+  const [pendingRaw, inProgRaw, runsRaw] = await Promise.all([
+    sql`
+      SELECT * FROM leads
+      WHERE research_status = 'pending'
+      ORDER BY lead_score DESC
+      LIMIT 50
+    `,
+    sql`
+      SELECT * FROM leads
+      WHERE research_status = 'in_progress'
+      LIMIT 20
+    `,
+    sql`
+      SELECT * FROM generation_runs
+      ORDER BY started_at DESC
+      LIMIT 20
+    `,
   ]);
-
-  const pending = (pendingRes.data ?? []) as Lead[];
-  const inProg = (inProgRes.data ?? []) as Lead[];
-  const runs = (runsRes.data ?? []) as GenerationRun[];
+  const pending = pendingRaw as unknown as Lead[];
+  const inProg = inProgRaw as unknown as Lead[];
+  const runs = runsRaw as unknown as GenerationRun[];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Research Queue</h1>
         <p className="text-slate-500 mt-1">
-          Leads being deeply researched by Claude. Background worker runs every 30 minutes.
+          Leads being deeply researched by Gemini. Background worker runs every 30 minutes.
         </p>
       </div>
 
@@ -60,9 +59,7 @@ export default async function ResearchQueuePage() {
                       <div className="text-sm font-medium truncate">
                         {l.company_name || l.person_name || "Unknown"}
                       </div>
-                      <div className="text-xs text-slate-500 truncate">
-                        via {l.source}
-                      </div>
+                      <div className="text-xs text-slate-500 truncate">via {l.source}</div>
                     </div>
                   </Link>
                 </li>
@@ -82,10 +79,7 @@ export default async function ResearchQueuePage() {
               {inProg.map((l) => (
                 <li key={l.id} className="flex items-center gap-3 p-2 rounded-md">
                   <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                  <Link
-                    href={`/leads/${l.id}`}
-                    className="text-sm font-medium hover:text-brand-600"
-                  >
+                  <Link href={`/leads/${l.id}`} className="text-sm font-medium hover:text-brand-600">
                     {l.company_name || l.person_name || "Unknown"}
                   </Link>
                 </li>
@@ -96,9 +90,7 @@ export default async function ResearchQueuePage() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200">
-        <h2 className="font-semibold text-slate-900 p-5 border-b border-slate-200">
-          Recent runs
-        </h2>
+        <h2 className="font-semibold text-slate-900 p-5 border-b border-slate-200">Recent runs</h2>
         <table className="w-full text-sm">
           <thead className="bg-slate-50">
             <tr className="text-left text-xs uppercase text-slate-500">
@@ -114,31 +106,21 @@ export default async function ResearchQueuePage() {
           <tbody className="divide-y divide-slate-100">
             {runs.map((r) => (
               <tr key={r.id}>
-                <td className="px-4 py-2 text-slate-600">
-                  {new Date(r.started_at).toLocaleString()}
-                </td>
+                <td className="px-4 py-2 text-slate-600">{new Date(r.started_at).toLocaleString()}</td>
                 <td className="px-4 py-2">
-                  <span
-                    className={`status-badge ${
-                      r.status === "completed"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : r.status === "running"
-                        ? "bg-blue-50 text-blue-700"
-                        : "bg-red-50 text-red-700"
-                    }`}
-                  >
+                  <span className={`status-badge ${
+                    r.status === "completed" ? "bg-emerald-50 text-emerald-700"
+                    : r.status === "running" ? "bg-blue-50 text-blue-700"
+                    : "bg-red-50 text-red-700"
+                  }`}>
                     {r.status}
                   </span>
                 </td>
                 <td className="px-4 py-2 text-right">{r.raw_signals_found}</td>
                 <td className="px-4 py-2 text-right">{r.leads_created}</td>
                 <td className="px-4 py-2 text-right">{r.leads_researched}</td>
-                <td className="px-4 py-2 text-right font-semibold text-emerald-700">
-                  {r.leads_qualified}
-                </td>
-                <td className="px-4 py-2">
-                  {r.notification_sent ? "✓" : "—"}
-                </td>
+                <td className="px-4 py-2 text-right font-semibold text-emerald-700">{r.leads_qualified}</td>
+                <td className="px-4 py-2">{r.notification_sent ? "✓" : "—"}</td>
               </tr>
             ))}
           </tbody>

@@ -94,7 +94,7 @@ All required services are 100% free — **no credit card needed for any of them*
 
 | Service | What it does | Cost |
 |---|---|---|
-| [Supabase](https://supabase.com) | Database (always-on PostgreSQL) | **FREE** — 500MB DB, plenty |
+| [Neon](https://neon.tech) | Database (serverless PostgreSQL) | **FREE** — 500MB DB, always-on |
 | [Google AI Studio](https://aistudio.google.com/apikey) | Gemini 2.0 Flash for AI research | **FREE** — 1,500 req/day, no card |
 | [ntfy.sh](https://ntfy.sh) | Push notifications to your phone | **FREE** — no account needed |
 | [Resend](https://resend.com) | Email backup notifications | **FREE** for 3,000/month |
@@ -107,14 +107,14 @@ Optional extras (also all free):
 - [Twitter Dev](https://developer.x.com) — free tier ~500k tweets/month
 - [ProductHunt API](https://api.producthunt.com/v2/oauth/applications) — free
 
-### 2. Set up the database
+### 2. Set up the database (Neon)
 
-1. Create a new Supabase project
-2. Go to **SQL Editor** → paste the contents of `supabase/schema.sql` → run
-3. Go to **Settings → API** and copy:
-   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
+1. Create a free project at https://neon.tech (sign in with GitHub, no card needed)
+   - **Project name**: `aventis-leads`
+   - **Region**: AWS / US East (N. Virginia) — closest to East Coast leads
+2. Open **SQL Editor** (left sidebar) → paste the contents of `db/schema.sql` → click Run
+3. On the project dashboard, find **Connection Details** → select **Pooled connection**
+   → copy the URL → this is your `DATABASE_URL`
 
 ### 3. Set up free phone push notifications
 

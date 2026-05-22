@@ -37,35 +37,40 @@ export default async function LeadsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
-  let query = db().from("leads").select("*").order("lead_score", { ascending: false }).order("created_at", { ascending: false }).limit(200);
-  if (params.status) query = query.eq("status", params.status);
-  if (params.source) query = query.eq("source", params.source);
-  if (params.east === "1") query = query.eq("is_east_coast", true);
-  if (params.min_score) query = query.gte("lead_score", parseInt(params.min_score, 10));
+  const sql = db();
+
+  // Build the WHERE clause dynamically
+  const conditions: string[] = [];
+  const sqlParams: unknown[] = [];
+  const push = (clause: string, value: unknown) => {
+    sqlParams.push(value);
+    conditions.push(clause.replace("?", `$${sqlParams.length}`));
+  };
+  if (params.status) push("status = ?", params.status);
+  if (params.source) push("source = ?", params.source);
+  if (params.east === "1") conditions.push("is_east_coast = true");
+  if (params.min_score) push("lead_score >= ?", parseInt(params.min_score, 10));
   if (params.q) {
-    query = query.or(
-      `company_name.ilike.%${params.q}%,person_name.ilike.%${params.q}%,intent_signal.ilike.%${params.q}%`
-    );
+    const q = `%${params.q}%`;
+    sqlParams.push(q, q, q);
+    const n = sqlParams.length;
+    conditions.push(`(company_name ILIKE $${n - 2} OR person_name ILIKE $${n - 1} OR intent_signal ILIKE $${n})`);
   }
 
-  const { data: leads, error } = await query;
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const leads = (await sql(
+    `SELECT * FROM leads ${where} ORDER BY lead_score DESC, created_at DESC LIMIT 200`,
+    sqlParams
+  )) as unknown as Lead[];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Leads</h1>
-        <p className="text-slate-500 mt-1">
-          Every prospect discovered by the system, ranked by score.
-        </p>
+        <p className="text-slate-500 mt-1">Every prospect discovered by the system, ranked by score.</p>
       </div>
 
       <LeadsFilter />
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
-          Error loading leads: {error.message}
-        </div>
-      )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <table className="w-full">
@@ -80,19 +85,17 @@ export default async function LeadsPage({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {(leads ?? []).length === 0 ? (
+            {leads.length === 0 ? (
               <tr>
                 <td colSpan={6} className="p-10 text-center text-sm text-slate-500">
                   No leads match these filters yet.
                 </td>
               </tr>
             ) : (
-              (leads as Lead[]).map((l) => (
+              leads.map((l) => (
                 <tr key={l.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3">
-                    <div className={`score-pill ${scoreColor(l.lead_score)}`}>
-                      {l.lead_score}
-                    </div>
+                    <div className={`score-pill ${scoreColor(l.lead_score)}`}>{l.lead_score}</div>
                   </td>
                   <td className="px-4 py-3">
                     <Link href={`/leads/${l.id}`} className="block">
@@ -101,43 +104,27 @@ export default async function LeadsPage({
                       </div>
                       <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
                         {l.location && <span>{l.location}</span>}
-                        {l.is_east_coast && (
-                          <span className="status-badge bg-blue-50 text-blue-700">
-                            East Coast
-                          </span>
-                        )}
+                        {l.is_east_coast && <span className="status-badge bg-blue-50 text-blue-700">East Coast</span>}
                       </div>
                     </Link>
                   </td>
                   <td className="px-4 py-3 max-w-md">
-                    <div className="text-sm text-slate-700 truncate">
-                      {l.intent_signal ?? "—"}
-                    </div>
+                    <div className="text-sm text-slate-700 truncate">{l.intent_signal ?? "—"}</div>
                     {l.matched_keywords && l.matched_keywords.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {l.matched_keywords.slice(0, 3).map((k) => (
-                          <span key={k} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                            {k}
-                          </span>
+                          <span key={k} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{k}</span>
                         ))}
                       </div>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="status-badge bg-slate-100 text-slate-700">
-                      {l.source}
-                    </span>
+                    <span className="status-badge bg-slate-100 text-slate-700">{l.source}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`status-badge ${statusColor(l.status)}`}
-                    >
-                      {l.status}
-                    </span>
+                    <span className={`status-badge ${statusColor(l.status)}`}>{l.status}</span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
-                    {timeAgo(l.created_at)}
-                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{timeAgo(l.created_at)}</td>
                 </tr>
               ))
             )}
@@ -150,19 +137,12 @@ export default async function LeadsPage({
 
 function statusColor(s: string): string {
   switch (s) {
-    case "new":
-      return "bg-blue-50 text-blue-700";
-    case "contacted":
-      return "bg-amber-50 text-amber-700";
-    case "qualified":
-      return "bg-emerald-50 text-emerald-700";
-    case "opportunity":
-      return "bg-violet-50 text-violet-700";
-    case "won":
-      return "bg-green-100 text-green-800";
-    case "lost":
-      return "bg-slate-200 text-slate-700";
-    default:
-      return "bg-slate-100 text-slate-600";
+    case "new": return "bg-blue-50 text-blue-700";
+    case "contacted": return "bg-amber-50 text-amber-700";
+    case "qualified": return "bg-emerald-50 text-emerald-700";
+    case "opportunity": return "bg-violet-50 text-violet-700";
+    case "won": return "bg-green-100 text-green-800";
+    case "lost": return "bg-slate-200 text-slate-700";
+    default: return "bg-slate-100 text-slate-600";
   }
 }

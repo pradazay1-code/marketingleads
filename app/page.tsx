@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db, countRows } from "@/lib/db";
 import Link from "next/link";
 import { TrendingUp, Users, Target, Sparkles, Clock, MapPin } from "lucide-react";
 import type { Lead, GenerationRun } from "@/lib/types";
@@ -7,59 +7,33 @@ export const revalidate = 30;
 export const dynamic = "force-dynamic";
 
 async function getStats() {
-  const supa = db();
+  const sql = db();
   const since24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [totalLeads, last24, qualified, eastCoast, openOpps, recentRun] = await Promise.all([
-    supa.from("leads").select("*", { count: "exact", head: true }),
-    supa.from("leads").select("*", { count: "exact", head: true }).gte("created_at", since24),
-    supa
-      .from("leads")
-      .select("*", { count: "exact", head: true })
-      .gte("lead_score", 65)
-      .gte("created_at", since7d),
-    supa
-      .from("leads")
-      .select("*", { count: "exact", head: true })
-      .eq("is_east_coast", true)
-      .gte("created_at", since7d),
-    supa
-      .from("opportunities")
-      .select("*", { count: "exact", head: true })
-      .not("stage", "in", "(closed_won,closed_lost)"),
-    supa
-      .from("generation_runs")
-      .select("*")
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .single(),
+  const [all, last24, qualified, eastCoast, openOpps, topLeads, latestRuns] = await Promise.all([
+    countRows("leads"),
+    countRows("leads", "WHERE created_at >= $1", [since24]),
+    countRows("leads", "WHERE lead_score >= 65 AND created_at >= $1", [since7d]),
+    countRows("leads", "WHERE is_east_coast = true AND created_at >= $1", [since7d]),
+    countRows("opportunities", "WHERE stage NOT IN ('closed_won','closed_lost')"),
+    sql`
+      SELECT * FROM leads
+      ORDER BY lead_score DESC, created_at DESC
+      LIMIT 6
+    `,
+    sql`
+      SELECT * FROM generation_runs
+      ORDER BY started_at DESC
+      LIMIT 5
+    `,
   ]);
 
-  const { data: topLeads } = await supa
-    .from("leads")
-    .select("*")
-    .order("lead_score", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(6);
-
-  const { data: latestRuns } = await supa
-    .from("generation_runs")
-    .select("*")
-    .order("started_at", { ascending: false })
-    .limit(5);
-
   return {
-    totals: {
-      all: totalLeads.count ?? 0,
-      last24: last24.count ?? 0,
-      qualified7d: qualified.count ?? 0,
-      eastCoast7d: eastCoast.count ?? 0,
-      openOpps: openOpps.count ?? 0,
-    },
-    topLeads: (topLeads ?? []) as Lead[],
-    latestRun: recentRun.data as GenerationRun | null,
-    latestRuns: (latestRuns ?? []) as GenerationRun[],
+    totals: { all, last24, qualified7d: qualified, eastCoast7d: eastCoast, openOpps },
+    topLeads: topLeads as unknown as Lead[],
+    latestRun: ((latestRuns as unknown as GenerationRun[])[0]) ?? null,
+    latestRuns: latestRuns as unknown as GenerationRun[],
   };
 }
 
@@ -71,8 +45,7 @@ function timeAgo(iso: string | null): string {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 function scoreColor(score: number) {
@@ -110,15 +83,11 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {stats.map((s) => {
           const Icon = s.icon;
           return (
-            <div
-              key={s.label}
-              className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-sm transition"
-            >
+            <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-sm transition">
               <div className="flex items-center justify-between">
                 <Icon className={`w-5 h-5 ${s.color}`} />
               </div>
@@ -130,13 +99,10 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Top leads */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200">
           <div className="flex items-center justify-between p-5 border-b border-slate-200">
             <h2 className="font-semibold text-slate-900">Top leads</h2>
-            <Link href="/leads" className="text-sm text-brand-600 hover:underline">
-              View all →
-            </Link>
+            <Link href="/leads" className="text-sm text-brand-600 hover:underline">View all →</Link>
           </div>
           <ul className="divide-y divide-slate-100">
             {topLeads.length === 0 ? (
@@ -147,30 +113,20 @@ export default async function DashboardPage() {
               topLeads.map((l) => (
                 <li key={l.id} className="p-4 hover:bg-slate-50 transition">
                   <Link href={`/leads/${l.id}`} className="flex items-center gap-4">
-                    <div className={`score-pill ${scoreColor(l.lead_score)}`}>
-                      {l.lead_score}
-                    </div>
+                    <div className={`score-pill ${scoreColor(l.lead_score)}`}>{l.lead_score}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <div className="font-medium text-slate-900 truncate">
                           {l.company_name || l.person_name || "Unknown"}
                         </div>
-                        {l.is_east_coast && (
-                          <span className="status-badge bg-blue-50 text-blue-700">
-                            East Coast
-                          </span>
-                        )}
-                        <span className="status-badge bg-slate-100 text-slate-600">
-                          {l.source}
-                        </span>
+                        {l.is_east_coast && <span className="status-badge bg-blue-50 text-blue-700">East Coast</span>}
+                        <span className="status-badge bg-slate-100 text-slate-600">{l.source}</span>
                       </div>
                       <div className="text-xs text-slate-500 mt-0.5 truncate">
                         {l.intent_signal ?? "(no signal text)"}
                       </div>
                     </div>
-                    <div className="text-xs text-slate-400 shrink-0">
-                      {timeAgo(l.created_at)}
-                    </div>
+                    <div className="text-xs text-slate-400 shrink-0">{timeAgo(l.created_at)}</div>
                   </Link>
                 </li>
               ))
@@ -178,12 +134,10 @@ export default async function DashboardPage() {
           </ul>
         </div>
 
-        {/* Latest runs */}
         <div className="bg-white rounded-xl border border-slate-200">
           <div className="p-5 border-b border-slate-200">
             <h2 className="font-semibold text-slate-900 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-slate-400" />
-              Recent cycles
+              <Clock className="w-4 h-4 text-slate-400" /> Recent cycles
             </h2>
           </div>
           <ul className="divide-y divide-slate-100">
@@ -193,38 +147,26 @@ export default async function DashboardPage() {
               latestRuns.map((r) => (
                 <li key={r.id} className="p-4">
                   <div className="flex items-center justify-between">
-                    <div className="text-xs text-slate-500">
-                      {timeAgo(r.started_at)}
-                    </div>
-                    <span
-                      className={`status-badge ${
-                        r.status === "completed"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : r.status === "running"
-                          ? "bg-blue-50 text-blue-700"
-                          : "bg-red-50 text-red-700"
-                      }`}
-                    >
+                    <div className="text-xs text-slate-500">{timeAgo(r.started_at)}</div>
+                    <span className={`status-badge ${
+                      r.status === "completed" ? "bg-emerald-50 text-emerald-700"
+                      : r.status === "running" ? "bg-blue-50 text-blue-700"
+                      : "bg-red-50 text-red-700"
+                    }`}>
                       {r.status}
                     </span>
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-2 text-center">
                     <div>
-                      <div className="text-lg font-semibold text-slate-900">
-                        {r.leads_created}
-                      </div>
+                      <div className="text-lg font-semibold text-slate-900">{r.leads_created}</div>
                       <div className="text-[10px] text-slate-500 uppercase">New</div>
                     </div>
                     <div>
-                      <div className="text-lg font-semibold text-slate-900">
-                        {r.leads_researched}
-                      </div>
+                      <div className="text-lg font-semibold text-slate-900">{r.leads_researched}</div>
                       <div className="text-[10px] text-slate-500 uppercase">Researched</div>
                     </div>
                     <div>
-                      <div className="text-lg font-semibold text-emerald-600">
-                        {r.leads_qualified}
-                      </div>
+                      <div className="text-lg font-semibold text-emerald-600">{r.leads_qualified}</div>
                       <div className="text-[10px] text-slate-500 uppercase">Qualified</div>
                     </div>
                   </div>

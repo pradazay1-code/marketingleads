@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { insertRow } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -9,19 +9,20 @@ export async function POST(
 ) {
   const { id } = await params;
   const { content } = (await req.json()) as { content: string };
-  if (!content?.trim()) return NextResponse.json({ error: "empty" }, { status: 400 });
+  if (!content?.trim()) {
+    return NextResponse.json({ error: "empty" }, { status: 400 });
+  }
 
-  const { data, error } = await db()
-    .from("lead_activities")
-    .insert({
+  try {
+    const activity = await insertRow("lead_activities", {
       lead_id: id,
       type: "note",
       content,
       created_by: "user",
-    })
-    .select("*")
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ activity: data });
+    });
+    return NextResponse.json({ activity });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

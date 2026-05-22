@@ -12,21 +12,16 @@ export default async function LeadDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supa = db();
+  const sql = db();
 
-  const [leadRes, activitiesRes, oppsRes] = await Promise.all([
-    supa.from("leads").select("*").eq("id", id).single(),
-    supa.from("lead_activities").select("*").eq("lead_id", id).order("created_at", { ascending: false }),
-    supa.from("opportunities").select("*").eq("lead_id", id).order("created_at", { ascending: false }),
+  const [leadRows, activities, opportunities] = await Promise.all([
+    sql`SELECT * FROM leads WHERE id = ${id}`,
+    sql`SELECT * FROM lead_activities WHERE lead_id = ${id} ORDER BY created_at DESC`,
+    sql`SELECT * FROM opportunities WHERE lead_id = ${id} ORDER BY created_at DESC`,
   ]);
 
-  if (leadRes.error || !leadRes.data) {
-    notFound();
-  }
-
-  const lead = leadRes.data as Lead;
-  const activities = (activitiesRes.data ?? []) as Activity[];
-  const opportunities = (oppsRes.data ?? []) as Opportunity[];
+  const leads = leadRows as unknown as Lead[];
+  if (leads.length === 0) notFound();
 
   return (
     <div className="space-y-6">
@@ -34,9 +29,9 @@ export default async function LeadDetailPage({
         ← All leads
       </Link>
       <LeadDetailClient
-        initialLead={lead}
-        initialActivities={activities}
-        initialOpportunities={opportunities}
+        initialLead={leads[0]}
+        initialActivities={activities as unknown as Activity[]}
+        initialOpportunities={opportunities as unknown as Opportunity[]}
       />
     </div>
   );

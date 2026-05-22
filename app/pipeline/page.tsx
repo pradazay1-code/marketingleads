@@ -17,24 +17,32 @@ interface LeadWithOpps extends Lead {
 }
 
 export default async function PipelinePage() {
-  const supa = db();
-  const { data: leads } = await supa
-    .from("leads")
-    .select("*, opportunities(*)")
-    .in("status", STAGES.map((s) => s.key))
-    .order("lead_score", { ascending: false })
-    .limit(300);
+  const sql = db();
+
+  // Use json aggregation to fetch leads + their opportunities in one query
+  const stageKeys = STAGES.map((s) => s.key);
+  const leads = (await sql`
+    SELECT l.*,
+           COALESCE(
+             (SELECT json_agg(o.*) FROM opportunities o WHERE o.lead_id = l.id),
+             '[]'::json
+           ) AS opportunities
+    FROM leads l
+    WHERE l.status = ANY(${stageKeys})
+    ORDER BY l.lead_score DESC
+    LIMIT 300
+  `) as unknown as LeadWithOpps[];
 
   const grouped: Record<string, LeadWithOpps[]> = Object.fromEntries(
     STAGES.map((s) => [s.key, []])
   );
-  for (const l of (leads ?? []) as LeadWithOpps[]) {
+  for (const l of leads) {
     if (l.status in grouped) grouped[l.status].push(l);
   }
 
-  const totalMrr = (leads ?? [])
-    .flatMap((l) => (l as LeadWithOpps).opportunities ?? [])
-    .reduce((acc, o) => acc + (o.estimated_mrr ?? 0), 0);
+  const totalMrr = leads
+    .flatMap((l) => l.opportunities ?? [])
+    .reduce((acc, o) => acc + Number(o.estimated_mrr ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -95,7 +103,7 @@ export default async function PipelinePage() {
                       <div className="text-xs text-emerald-700 mt-1 font-medium">
                         $
                         {(l.opportunities ?? [])
-                          .reduce((a, o) => a + (o.estimated_mrr ?? 0), 0)
+                          .reduce((a, o) => a + Number(o.estimated_mrr ?? 0), 0)
                           .toLocaleString()}
                         /mo
                       </div>

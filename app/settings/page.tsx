@@ -16,16 +16,16 @@ interface DbSource {
 }
 
 export default async function SettingsPage() {
-  const supa = db();
-  const [kwRes, srcRes] = await Promise.all([
-    supa.from("keywords").select("*").order("category").order("weight", { ascending: false }),
-    supa.from("sources").select("*").order("name"),
+  const sql = db();
+  const [keywordsRaw, sourcesRaw] = await Promise.all([
+    sql`SELECT * FROM keywords ORDER BY category, weight DESC`,
+    sql`SELECT * FROM sources ORDER BY name`,
   ]);
 
   return (
     <SettingsClient
-      keywords={(kwRes.data ?? []) as Keyword[]}
-      sources={(srcRes.data ?? []) as DbSource[]}
+      keywords={keywordsRaw as unknown as Keyword[]}
+      sources={sourcesRaw as unknown as DbSource[]}
     />
   );
 }

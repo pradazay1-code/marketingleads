@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { db, log } from "../../lib/db";
+import { db, log, countRows } from "../../lib/db";
 
 /**
  * Hourly heartbeat — confirms the cron infrastructure is alive,
@@ -7,24 +7,22 @@ import { db, log } from "../../lib/db";
  */
 export default async (_req: Request) => {
   try {
-    // health: count leads in the last 24h
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { count: leadCount } = await db()
-      .from("leads")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", since);
+    const sql = db();
 
-    // find sources that have been failing > 24h
-    const { data: staleSources } = await db()
-      .from("sources")
-      .select("name, last_success_at, last_error")
-      .lt("last_success_at", since);
+    const leadCount = await countRows("leads", "WHERE created_at >= $1", [since]);
+
+    const staleSources = (await sql`
+      SELECT name, last_success_at, last_error
+      FROM sources
+      WHERE last_success_at IS NULL OR last_success_at < ${since}
+    `) as Array<{ name: string; last_success_at: string | null; last_error: string | null }>;
 
     // Trim system_log to last 14 days
     const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-    await db().from("system_log").delete().lt("created_at", cutoff);
+    await sql`DELETE FROM system_log WHERE created_at < ${cutoff}`;
 
-    await log("info", "heartbeat", `Alive. ${leadCount ?? 0} leads in last 24h.`, {
+    await log("info", "heartbeat", `Alive. ${leadCount} leads in last 24h.`, {
       stale_sources: staleSources,
     });
     return new Response(
