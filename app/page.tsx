@@ -3,6 +3,7 @@ import Link from "next/link";
 import { TrendingUp, Users, Target, Sparkles, Clock, MapPin } from "lucide-react";
 import type { Lead, GenerationRun } from "@/lib/types";
 import SetupNeeded, { type SetupState } from "@/components/SetupNeeded";
+import SystemStatus from "@/components/SystemStatus";
 
 export const revalidate = 30;
 export const dynamic = "force-dynamic";
@@ -24,29 +25,42 @@ async function getStats() {
   const since24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [all, last24, qualified, eastCoast, openOpps, topLeads, latestRuns] = await Promise.all([
-    countRows("leads"),
-    countRows("leads", "WHERE created_at >= $1", [since24]),
-    countRows("leads", "WHERE lead_score >= 65 AND created_at >= $1", [since7d]),
-    countRows("leads", "WHERE is_east_coast = true AND created_at >= $1", [since7d]),
-    countRows("opportunities", "WHERE stage NOT IN ('closed_won','closed_lost')"),
-    sql`
-      SELECT * FROM leads
-      ORDER BY lead_score DESC, created_at DESC
-      LIMIT 6
-    `,
-    sql`
-      SELECT * FROM generation_runs
-      ORDER BY started_at DESC
-      LIMIT 5
-    `,
-  ]);
+  const [all, last24, qualified, eastCoast, openOpps, topLeads, latestRuns, sourcesRows] =
+    await Promise.all([
+      countRows("leads"),
+      countRows("leads", "WHERE created_at >= $1", [since24]),
+      countRows("leads", "WHERE lead_score >= 65 AND created_at >= $1", [since7d]),
+      countRows("leads", "WHERE is_east_coast = true AND created_at >= $1", [since7d]),
+      countRows("opportunities", "WHERE stage NOT IN ('closed_won','closed_lost')"),
+      sql`
+        SELECT * FROM leads
+        ORDER BY lead_score DESC, created_at DESC
+        LIMIT 6
+      `,
+      sql`
+        SELECT * FROM generation_runs
+        ORDER BY started_at DESC
+        LIMIT 5
+      `,
+      sql`
+        SELECT name, type, enabled, last_run_at, last_success_at, last_error
+        FROM sources ORDER BY name
+      `,
+    ]);
 
   return {
     totals: { all, last24, qualified7d: qualified, eastCoast7d: eastCoast, openOpps },
     topLeads: topLeads as unknown as Lead[],
     latestRun: ((latestRuns as unknown as GenerationRun[])[0]) ?? null,
     latestRuns: latestRuns as unknown as GenerationRun[],
+    sources: sourcesRows as unknown as Array<{
+      name: string;
+      type: string;
+      enabled: boolean;
+      last_run_at: string | null;
+      last_success_at: string | null;
+      last_error: string | null;
+    }>,
   };
 }
 
@@ -102,7 +116,7 @@ export default async function DashboardPage() {
     throw err;
   }
 
-  const { totals, topLeads, latestRun, latestRuns } = stats;
+  const { totals, topLeads, latestRun, latestRuns, sources } = stats;
   const stats_cards = [
     { label: "Leads (last 24h)", value: totals.last24, icon: Sparkles, color: "text-brand-600" },
     { label: "Qualified (7d)", value: totals.qualified7d, icon: TrendingUp, color: "text-emerald-600" },
@@ -110,6 +124,21 @@ export default async function DashboardPage() {
     { label: "Open opportunities", value: totals.openOpps, icon: Target, color: "text-violet-600" },
     { label: "Total leads", value: totals.all, icon: Users, color: "text-slate-600" },
   ];
+
+  // No leads yet? Show the SystemStatus verification panel instead of empty UI.
+  if (totals.all === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-slate-500 mt-1">
+            Aventis Leads · autonomous discovery for Aventis Marketing & AventisAI
+          </p>
+        </div>
+        <SystemStatus lastRun={latestRun} sources={sources} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

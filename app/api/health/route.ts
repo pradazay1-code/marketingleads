@@ -3,11 +3,11 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 /**
- * Diagnostic endpoint — hit this any time something's broken.
- * Tells you exactly which env vars are set, whether the DB is reachable,
- * and whether the schema has been applied.
+ * Diagnostic endpoint — hit this any time something's broken or to verify
+ * the system is alive. Reports env config, DB health, schema status,
+ * cron history, source health, and recent leads count.
  *
- * No auth required — it never leaks secrets, only reports presence/absence.
+ * No auth — never leaks secret values, only presence/absence.
  */
 export async function GET() {
   const result: Record<string, unknown> = {
@@ -20,7 +20,13 @@ export async function GET() {
 
   // -------- Environment variables --------
   const required = ["DATABASE_URL", "GEMINI_API_KEY", "NTFY_TOPIC", "CRON_SECRET"];
-  const recommended = ["RESEND_API_KEY", "NOTIFY_TO_EMAIL", "NOTIFY_FROM_EMAIL", "GROQ_API_KEY", "NEXT_PUBLIC_SITE_URL"];
+  const recommended = [
+    "RESEND_API_KEY",
+    "NOTIFY_TO_EMAIL",
+    "NOTIFY_FROM_EMAIL",
+    "GROQ_API_KEY",
+    "NEXT_PUBLIC_SITE_URL",
+  ];
   const optional = [
     "GOOGLE_API_KEY",
     "GOOGLE_CSE_ID",
@@ -48,22 +54,26 @@ export async function GET() {
 
   const missingRecommended = recommended.filter((k) => !process.env[k]);
   if (missingRecommended.length > 0) {
-    summary.push(`⚠️  Missing recommended env vars: ${missingRecommended.join(", ")} (system works without them but functionality is reduced)`);
+    summary.push(
+      `⚠️  Missing recommended env vars: ${missingRecommended.join(", ")} (system works without them but functionality is reduced)`
+    );
   }
 
   // -------- Database connectivity --------
+  let dbOk = false;
   if (process.env.DATABASE_URL) {
     try {
       const { neon } = await import("@neondatabase/serverless");
       const sql = neon(process.env.DATABASE_URL);
       const start = Date.now();
-      const result = (await sql`SELECT 1 AS ok`) as Array<{ ok: number }>;
+      const r = (await sql`SELECT 1 AS ok`) as Array<{ ok: number }>;
       const ms = Date.now() - start;
-      if (result[0]?.ok === 1) {
+      if (r[0]?.ok === 1) {
         checks.database = { status: "ok", latency_ms: ms };
         summary.push(`✅ Database reachable (${ms}ms)`);
+        dbOk = true;
       } else {
-        checks.database = { status: "unexpected_result", result };
+        checks.database = { status: "unexpected_result", result: r };
         summary.push("⚠️  Database returned unexpected result");
       }
     } catch (err) {
@@ -76,11 +86,12 @@ export async function GET() {
     checks.database = { status: "not_configured" };
   }
 
-  // -------- Schema check --------
-  if (process.env.DATABASE_URL && (checks.database as { status: string }).status === "ok") {
+  // -------- Schema check + live data snapshot --------
+  let schemaOk = false;
+  if (dbOk) {
     try {
       const { neon } = await import("@neondatabase/serverless");
-      const sql = neon(process.env.DATABASE_URL);
+      const sql = neon(process.env.DATABASE_URL!);
       const required_tables = [
         "leads",
         "lead_activities",
@@ -92,15 +103,15 @@ export async function GET() {
         "system_log",
       ];
       const rows = (await sql`
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
+        SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
       `) as Array<{ table_name: string }>;
       const found = new Set(rows.map((r) => r.table_name));
       const missing = required_tables.filter((t) => !found.has(t));
+
       if (missing.length === 0) {
         checks.schema = { status: "ok", tables: required_tables.length };
         summary.push(`✅ All ${required_tables.length} tables present`);
+        schemaOk = true;
       } else {
         checks.schema = { status: "incomplete", missing };
         summary.push(
@@ -112,6 +123,83 @@ export async function GET() {
       const msg = err instanceof Error ? err.message : String(err);
       checks.schema = { status: "error", error: msg };
       summary.push(`⚠️  Could not check schema: ${msg}`);
+    }
+  }
+
+  // -------- Live data: cron history, source health, lead counts --------
+  if (schemaOk) {
+    try {
+      const { neon } = await import("@neondatabase/serverless");
+      const sql = neon(process.env.DATABASE_URL!);
+
+      const recentRuns = (await sql`
+        SELECT id, started_at, completed_at, status,
+               raw_signals_found, leads_created, leads_researched,
+               leads_qualified, notification_sent, errors
+        FROM generation_runs
+        ORDER BY started_at DESC
+        LIMIT 5
+      `) as Array<Record<string, unknown>>;
+      checks.recent_cron_runs = recentRuns;
+
+      const lastRun = recentRuns[0];
+      if (!lastRun) {
+        summary.push(
+          "⏳ The cron has not fired yet. First scheduled run is within 4 hours of deploy (every 0/4/8/12/16/20 UTC). Use Settings → Run Now to trigger immediately."
+        );
+      } else {
+        const startedAt = new Date(lastRun.started_at as string);
+        const minsAgo = Math.floor((Date.now() - startedAt.getTime()) / 60000);
+        const status = lastRun.status;
+        const signals = lastRun.raw_signals_found ?? 0;
+        const created = lastRun.leads_created ?? 0;
+        const qualified = lastRun.leads_qualified ?? 0;
+        summary.push(
+          `🕐 Last cycle ${minsAgo}m ago — ${status}, ${signals} signals → ${created} leads → ${qualified} qualified`
+        );
+      }
+
+      const sourceHealth = (await sql`
+        SELECT name, type, enabled, last_run_at, last_success_at, last_error
+        FROM sources ORDER BY name
+      `) as Array<{
+        name: string;
+        type: string;
+        enabled: boolean;
+        last_run_at: string | null;
+        last_success_at: string | null;
+        last_error: string | null;
+      }>;
+      checks.sources = sourceHealth;
+      const failing = sourceHealth.filter((s) => s.enabled && s.last_error);
+      if (failing.length > 0) {
+        summary.push(
+          `⚠️  ${failing.length} source(s) currently failing: ${failing.map((s) => s.name).join(", ")}`
+        );
+      }
+
+      const counts = (await sql`
+        SELECT
+          (SELECT COUNT(*) FROM leads)::int AS total_leads,
+          (SELECT COUNT(*) FROM leads WHERE created_at >= now() - interval '24 hours')::int AS leads_24h,
+          (SELECT COUNT(*) FROM leads WHERE lead_score >= 65)::int AS qualified_leads,
+          (SELECT COUNT(*) FROM leads WHERE research_status = 'pending')::int AS pending_research,
+          (SELECT COUNT(*) FROM keywords WHERE enabled = true)::int AS active_keywords,
+          (SELECT COUNT(*) FROM sources WHERE enabled = true)::int AS active_sources,
+          (SELECT COUNT(*) FROM notifications WHERE status = 'sent')::int AS notifications_sent
+      `) as Array<Record<string, number>>;
+      checks.data_counts = counts[0];
+
+      const recentLogs = (await sql`
+        SELECT level, event, message, created_at
+        FROM system_log
+        ORDER BY created_at DESC
+        LIMIT 10
+      `) as Array<Record<string, unknown>>;
+      checks.recent_log = recentLogs;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      summary.push(`⚠️  Could not load live data: ${msg}`);
     }
   }
 
@@ -147,7 +235,6 @@ export async function GET() {
     summary.push(`✅ Notification channels active: ${active.join(", ")}`);
   }
 
-  // -------- Site URL --------
   if (!process.env.NEXT_PUBLIC_SITE_URL) {
     summary.push("⚠️  NEXT_PUBLIC_SITE_URL not set — notification links will be broken");
   }
