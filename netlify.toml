@@ -1,0 +1,26 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# 4-hour cron: finds new leads, researches, scores, notifies
+[functions."scheduled-lead-gen"]
+  schedule = "0 */4 * * *"
+
+# 30-minute cron: deep research on pending leads between batches
+[functions."scheduled-deep-research"]
+  schedule = "*/30 * * * *"
+
+# Hourly cron: heartbeat + cleanup
+[functions."scheduled-heartbeat"]
+  schedule = "0 * * * *"
+
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["lib/**", "supabase/**"]
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"

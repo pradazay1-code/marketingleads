@@ -1,0 +1,239 @@
+import { db } from "@/lib/db";
+import Link from "next/link";
+import { TrendingUp, Users, Target, Sparkles, Clock, MapPin } from "lucide-react";
+import type { Lead, GenerationRun } from "@/lib/types";
+
+export const revalidate = 30;
+export const dynamic = "force-dynamic";
+
+async function getStats() {
+  const supa = db();
+  const since24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [totalLeads, last24, qualified, eastCoast, openOpps, recentRun] = await Promise.all([
+    supa.from("leads").select("*", { count: "exact", head: true }),
+    supa.from("leads").select("*", { count: "exact", head: true }).gte("created_at", since24),
+    supa
+      .from("leads")
+      .select("*", { count: "exact", head: true })
+      .gte("lead_score", 65)
+      .gte("created_at", since7d),
+    supa
+      .from("leads")
+      .select("*", { count: "exact", head: true })
+      .eq("is_east_coast", true)
+      .gte("created_at", since7d),
+    supa
+      .from("opportunities")
+      .select("*", { count: "exact", head: true })
+      .not("stage", "in", "(closed_won,closed_lost)"),
+    supa
+      .from("generation_runs")
+      .select("*")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .single(),
+  ]);
+
+  const { data: topLeads } = await supa
+    .from("leads")
+    .select("*")
+    .order("lead_score", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(6);
+
+  const { data: latestRuns } = await supa
+    .from("generation_runs")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(5);
+
+  return {
+    totals: {
+      all: totalLeads.count ?? 0,
+      last24: last24.count ?? 0,
+      qualified7d: qualified.count ?? 0,
+      eastCoast7d: eastCoast.count ?? 0,
+      openOpps: openOpps.count ?? 0,
+    },
+    topLeads: (topLeads ?? []) as Lead[],
+    latestRun: recentRun.data as GenerationRun | null,
+    latestRuns: (latestRuns ?? []) as GenerationRun[],
+  };
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+function scoreColor(score: number) {
+  if (score >= 80) return "bg-emerald-500";
+  if (score >= 65) return "bg-brand-500";
+  if (score >= 45) return "bg-amber-500";
+  return "bg-slate-400";
+}
+
+export default async function DashboardPage() {
+  const { totals, topLeads, latestRun, latestRuns } = await getStats();
+
+  const stats = [
+    { label: "Leads (last 24h)", value: totals.last24, icon: Sparkles, color: "text-brand-600" },
+    { label: "Qualified (7d)", value: totals.qualified7d, icon: TrendingUp, color: "text-emerald-600" },
+    { label: "East Coast (7d)", value: totals.eastCoast7d, icon: MapPin, color: "text-amber-600" },
+    { label: "Open opportunities", value: totals.openOpps, icon: Target, color: "text-violet-600" },
+    { label: "Total leads", value: totals.all, icon: Users, color: "text-slate-600" },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-slate-500 mt-1">
+            Aventis Leads · autonomous discovery for Aventis Marketing & AventisAI
+          </p>
+        </div>
+        <div className="text-right text-sm">
+          <div className="text-slate-500">Last cycle</div>
+          <div className="font-medium text-slate-900">
+            {timeAgo(latestRun?.completed_at ?? latestRun?.started_at ?? null)}
+          </div>
+        </div>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {stats.map((s) => {
+          const Icon = s.icon;
+          return (
+            <div
+              key={s.label}
+              className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-sm transition"
+            >
+              <div className="flex items-center justify-between">
+                <Icon className={`w-5 h-5 ${s.color}`} />
+              </div>
+              <div className="mt-3 text-3xl font-bold text-slate-900">{s.value}</div>
+              <div className="text-xs text-slate-500 mt-1">{s.label}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Top leads */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200">
+          <div className="flex items-center justify-between p-5 border-b border-slate-200">
+            <h2 className="font-semibold text-slate-900">Top leads</h2>
+            <Link href="/leads" className="text-sm text-brand-600 hover:underline">
+              View all →
+            </Link>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {topLeads.length === 0 ? (
+              <li className="p-8 text-center text-sm text-slate-500">
+                No leads yet. The first batch will arrive within 4 hours.
+              </li>
+            ) : (
+              topLeads.map((l) => (
+                <li key={l.id} className="p-4 hover:bg-slate-50 transition">
+                  <Link href={`/leads/${l.id}`} className="flex items-center gap-4">
+                    <div className={`score-pill ${scoreColor(l.lead_score)}`}>
+                      {l.lead_score}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-slate-900 truncate">
+                          {l.company_name || l.person_name || "Unknown"}
+                        </div>
+                        {l.is_east_coast && (
+                          <span className="status-badge bg-blue-50 text-blue-700">
+                            East Coast
+                          </span>
+                        )}
+                        <span className="status-badge bg-slate-100 text-slate-600">
+                          {l.source}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5 truncate">
+                        {l.intent_signal ?? "(no signal text)"}
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-400 shrink-0">
+                      {timeAgo(l.created_at)}
+                    </div>
+                  </Link>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+
+        {/* Latest runs */}
+        <div className="bg-white rounded-xl border border-slate-200">
+          <div className="p-5 border-b border-slate-200">
+            <h2 className="font-semibold text-slate-900 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-slate-400" />
+              Recent cycles
+            </h2>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {latestRuns.length === 0 ? (
+              <li className="p-6 text-sm text-slate-500 text-center">No cycles yet.</li>
+            ) : (
+              latestRuns.map((r) => (
+                <li key={r.id} className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-slate-500">
+                      {timeAgo(r.started_at)}
+                    </div>
+                    <span
+                      className={`status-badge ${
+                        r.status === "completed"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : r.status === "running"
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-red-50 text-red-700"
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-lg font-semibold text-slate-900">
+                        {r.leads_created}
+                      </div>
+                      <div className="text-[10px] text-slate-500 uppercase">New</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-slate-900">
+                        {r.leads_researched}
+                      </div>
+                      <div className="text-[10px] text-slate-500 uppercase">Researched</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-emerald-600">
+                        {r.leads_qualified}
+                      </div>
+                      <div className="text-[10px] text-slate-500 uppercase">Qualified</div>
+                    </div>
+                  </div>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
