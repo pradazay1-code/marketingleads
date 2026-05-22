@@ -5,22 +5,15 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# 4-hour cron: finds new leads, researches, scores, notifies
-[functions."scheduled-lead-gen"]
-  schedule = "0 */4 * * *"
-
-# 30-minute cron: deep research on pending leads between batches
-[functions."scheduled-deep-research"]
-  schedule = "*/30 * * * *"
-
-# Hourly cron: heartbeat + cleanup
-[functions."scheduled-heartbeat"]
-  schedule = "0 * * * *"
-
 [functions]
   node_bundler = "esbuild"
-  included_files = ["lib/**", "supabase/**"]
+  included_files = ["lib/**", "db/**"]
 
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
+
+# Schedules are defined in each function file via `export const config = { schedule: "..." }`:
+#   scheduled-lead-gen.ts        — every 4h
+#   scheduled-deep-research.ts   — every 30m
+#   scheduled-heartbeat.ts       — hourly

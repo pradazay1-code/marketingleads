@@ -2,9 +2,22 @@ import { db, countRows } from "@/lib/db";
 import Link from "next/link";
 import { TrendingUp, Users, Target, Sparkles, Clock, MapPin } from "lucide-react";
 import type { Lead, GenerationRun } from "@/lib/types";
+import SetupNeeded, { type SetupState } from "@/components/SetupNeeded";
 
 export const revalidate = 30;
 export const dynamic = "force-dynamic";
+
+function envState(): SetupState {
+  return {
+    databaseUrl: !!process.env.DATABASE_URL,
+    schemaApplied: false, // determined at runtime
+    aiKey: !!(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY),
+    ntfy: !!process.env.NTFY_TOPIC,
+    email: !!(process.env.RESEND_API_KEY && process.env.NOTIFY_TO_EMAIL),
+    cronSecret: !!process.env.CRON_SECRET,
+    siteUrl: !!process.env.NEXT_PUBLIC_SITE_URL,
+  };
+}
 
 async function getStats() {
   const sql = db();
@@ -56,9 +69,41 @@ function scoreColor(score: number) {
 }
 
 export default async function DashboardPage() {
-  const { totals, topLeads, latestRun, latestRuns } = await getStats();
+  const state = envState();
 
-  const stats = [
+  // If DATABASE_URL is missing, short-circuit to the setup wizard
+  if (!state.databaseUrl) {
+    return (
+      <SetupNeeded
+        state={state}
+        errorMessage="DATABASE_URL environment variable is not set in Netlify."
+      />
+    );
+  }
+
+  // Try to load stats — if the schema isn't applied yet, show setup wizard
+  let stats: Awaited<ReturnType<typeof getStats>>;
+  try {
+    stats = await getStats();
+    state.schemaApplied = true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const looksLikeSchema =
+      /relation .* does not exist|does not exist|table/i.test(msg);
+    if (looksLikeSchema) {
+      return (
+        <SetupNeeded
+          state={state}
+          errorMessage={`Database is connected, but the schema hasn't been applied. ${msg}`}
+        />
+      );
+    }
+    // Any other DB error: let the error boundary handle it
+    throw err;
+  }
+
+  const { totals, topLeads, latestRun, latestRuns } = stats;
+  const stats_cards = [
     { label: "Leads (last 24h)", value: totals.last24, icon: Sparkles, color: "text-brand-600" },
     { label: "Qualified (7d)", value: totals.qualified7d, icon: TrendingUp, color: "text-emerald-600" },
     { label: "East Coast (7d)", value: totals.eastCoast7d, icon: MapPin, color: "text-amber-600" },
@@ -84,7 +129,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {stats.map((s) => {
+        {stats_cards.map((s) => {
           const Icon = s.icon;
           return (
             <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-sm transition">
