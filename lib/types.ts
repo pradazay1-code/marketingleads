@@ -17,20 +17,30 @@ export type SourceType =
   | "indeed"
   | "producthunt"
   | "indiehackers"
-  | "businessregistry";
+  | "businessregistry"
+  | "bluesky"
+  | "github"
+  | "stackexchange"
+  | "devto"
+  | "lobsters"
+  | "ycombinator";
 
 export interface RawSignal {
   external_id: string;
-  source: SourceType;
+  source: SourceType | string;
   source_url: string;
   source_post_content: string;
   source_post_at?: string;
   person_name?: string;
   company_name?: string;
+  email?: string;
+  website?: string;
+  twitter_handle?: string;
+  linkedin_url?: string;
   location?: string;
   matched_keywords: string[];
   intent_signal: string;
-  intent_category?: "pain" | "shopping" | "hiring" | "launching" | "complaint" | "intent";
+  intent_category?: "pain" | "shopping" | "hiring" | "launching" | "complaint" | "intent" | "service";
   raw?: Record<string, unknown>;
 }
 
@@ -66,6 +76,12 @@ export interface Lead {
   buying_signals: string[] | null;
   recommended_services: string[] | null;
   outreach_angle: string | null;
+  outreach_email_draft: string | null;
+  outreach_dm_draft: string | null;
+  next_actions: string[] | null;
+  tech_stack: string[] | null;
+  social_links: Record<string, string> | null;
+  domain_age_estimate: string | null;
   last_researched_at: string | null;
 
   lead_score: number;

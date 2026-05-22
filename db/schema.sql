@@ -46,6 +46,12 @@ create table if not exists leads (
   buying_signals text[],
   recommended_services text[],           -- which Aventis offerings fit
   outreach_angle text,                   -- AI-generated personalized opening
+  outreach_email_draft text,             -- AI-generated cold email draft
+  outreach_dm_draft text,                -- AI-generated DM/short message draft
+  next_actions text[],                   -- AI-suggested next steps
+  tech_stack text[],                     -- detected tech stack
+  social_links jsonb,                    -- detected social media URLs
+  domain_age_estimate text,              -- domain age from Wayback
   last_researched_at timestamptz,
 
   -- scoring
@@ -249,12 +255,52 @@ on conflict (phrase) do nothing;
 
 insert into sources (name, type, config) values
   ('Reddit — Small Business', 'reddit', '{"subreddits":["smallbusiness","Entrepreneur","startups","EntrepreneurRideAlong","marketing","SEO","sweatystartup","SaaS","b2bmarketing","advertising"],"limit":50}'),
+  ('Reddit — Intent Search', 'reddit_search', '{"queries":["looking for marketing agency","fired our marketing agency","need more leads"]}'),
   ('Hacker News — Show & Ask', 'hackernews', '{"types":["show","ask"],"limit":100}'),
-  ('Google — Intent Search', 'google', '{"queries":["looking for marketing agency","need help with marketing","best white label software","just launched my business","fired our marketing agency"]}'),
+  ('Google — Intent Search', 'google', '{"queries":["looking for marketing agency","need help with marketing","best white label software"]}'),
   ('Indeed — Marketing Job Postings', 'indeed', '{"queries":["marketing manager","marketing director","cmo"],"location":"east coast"}'),
   ('ProductHunt — New Launches', 'producthunt', '{"limit":30}'),
-  ('Indie Hackers — Posts', 'indiehackers', '{"limit":50}')
+  ('Indie Hackers — Posts', 'indiehackers', '{"limit":50}'),
+  ('Bluesky — intent search', 'bluesky', '{"queries":["looking for a marketing agency","need help with marketing","need more leads"]}'),
+  ('GitHub — new SaaS/startups', 'github', '{"topics":["saas","startup","marketing"]}'),
+  ('Stack Exchange — Webmasters', 'stackexchange', '{"sites":["webmasters","freelancing"]}'),
+  ('DEV.to — startup tag', 'devto', '{"tags":["startup","marketing","saas"]}'),
+  ('Lobste.rs — new posts', 'lobsters', '{}'),
+  ('Y Combinator — recent batches', 'ycombinator', '{"batches":["W25","S24","W24"]}'),
+  ('Business Registry — East Coast', 'businessregistry', '{"jurisdictions":["us_fl","us_ny","us_nj","us_pa","us_ma","us_ga","us_nc","us_sc","us_va","us_md","us_ct"]}')
 on conflict (name) do nothing;
+
+-- v2 tables: audit log, saved views, sessions
+create table if not exists audit_log (
+  id uuid primary key default gen_random_uuid(),
+  actor text default 'anonymous',
+  action text not null,
+  resource_type text,
+  resource_id text,
+  metadata jsonb,
+  created_at timestamptz default now()
+);
+create index if not exists idx_audit_actor on audit_log (actor, created_at desc);
+create index if not exists idx_audit_resource on audit_log (resource_type, resource_id);
+
+create table if not exists saved_views (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  filters jsonb not null,
+  created_by text default 'isaiah',
+  created_at timestamptz default now()
+);
+
+create table if not exists sessions (
+  id uuid primary key default gen_random_uuid(),
+  token text unique not null,
+  user_label text default 'isaiah',
+  expires_at timestamptz not null,
+  created_at timestamptz default now(),
+  last_seen_at timestamptz default now()
+);
+create index if not exists idx_sessions_token on sessions (token);
+create index if not exists idx_sessions_expires on sessions (expires_at);
 
 -- Neon doesn't have built-in auth like Supabase, so no row-level security
 -- policies are needed. Access is gated by who has DATABASE_URL (env vars only).

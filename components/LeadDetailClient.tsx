@@ -229,6 +229,72 @@ export default function LeadDetailClient({
             </div>
           )}
 
+          {lead.outreach_email_draft && (
+            <div className="mt-3 bg-slate-50 border border-slate-200 rounded-md p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs uppercase font-medium text-slate-600">Cold email draft</div>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(lead.outreach_email_draft ?? "")}
+                  className="text-xs text-brand-600 hover:underline"
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="text-sm text-slate-800 whitespace-pre-wrap">{lead.outreach_email_draft}</div>
+            </div>
+          )}
+
+          {lead.outreach_dm_draft && (
+            <div className="mt-3 bg-slate-50 border border-slate-200 rounded-md p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs uppercase font-medium text-slate-600">DM / short-message draft</div>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(lead.outreach_dm_draft ?? "")}
+                  className="text-xs text-brand-600 hover:underline"
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="text-sm text-slate-800 whitespace-pre-wrap">{lead.outreach_dm_draft}</div>
+            </div>
+          )}
+
+          {(lead.next_actions?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <div className="text-xs uppercase font-medium text-slate-500 mb-1">Next actions</div>
+              <ul className="text-sm text-slate-700 list-disc list-inside space-y-0.5">
+                {lead.next_actions!.map((a, i) => <li key={i}>{a}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {(lead.tech_stack?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <div className="text-xs uppercase font-medium text-slate-500 mb-1">Tech stack detected</div>
+              <div className="flex flex-wrap gap-1.5">
+                {lead.tech_stack!.map((t) => (
+                  <span key={t} className="status-badge bg-slate-100 text-slate-700">{t}</span>
+                ))}
+              </div>
+              {lead.domain_age_estimate && (
+                <div className="text-xs text-slate-500 mt-2">Domain: {lead.domain_age_estimate}</div>
+              )}
+            </div>
+          )}
+
+          {lead.social_links && Object.keys(lead.social_links).length > 0 && (
+            <div className="mt-4">
+              <div className="text-xs uppercase font-medium text-slate-500 mb-1">Social links</div>
+              <div className="flex flex-wrap gap-2 text-sm">
+                {Object.entries(lead.social_links).map(([k, v]) => (
+                  <a key={k} href={v} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
+                    {k}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {(lead.pain_points?.length ?? 0) > 0 && (
             <div className="mt-4">
               <div className="text-xs uppercase font-medium text-slate-500 mb-1">Pain points</div>

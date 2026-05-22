@@ -4,8 +4,10 @@ import { detectState, isEastCoast } from "./keywords";
 import { preScore } from "./scoring/leadScorer";
 import { researchLead } from "./research/aiResearch";
 import { notifyBatch } from "./notify";
+import { seedSampleLeadsIfEmpty } from "./seed";
 
 import { fetchRedditSignals } from "./sources/reddit";
+import { fetchRedditSearchSignals } from "./sources/redditEnhanced";
 import { fetchHackerNewsSignals } from "./sources/hackernews";
 import { fetchGoogleSignals } from "./sources/googleSearch";
 import { fetchTwitterSignals } from "./sources/twitter";
@@ -13,6 +15,12 @@ import { fetchIndeedSignals } from "./sources/indeed";
 import { fetchProductHuntSignals } from "./sources/producthunt";
 import { fetchIndieHackersSignals } from "./sources/indiehackers";
 import { fetchBusinessRegistrySignals } from "./sources/businessRegistry";
+import { fetchBlueskySignals } from "./sources/bluesky";
+import { fetchGithubSignals } from "./sources/github";
+import { fetchStackExchangeSignals } from "./sources/stackexchange";
+import { fetchDevToSignals } from "./sources/devto";
+import { fetchLobstersSignals } from "./sources/lobsters";
+import { fetchYCSignals } from "./sources/yCombinator";
 
 const PRE_RESEARCH_THRESHOLD = 25;
 const QUALIFIED_THRESHOLD = 65;
@@ -24,6 +32,7 @@ interface SourceTask {
 
 const SOURCES: SourceTask[] = [
   { name: "reddit", fn: fetchRedditSignals },
+  { name: "reddit_search", fn: fetchRedditSearchSignals },
   { name: "hackernews", fn: fetchHackerNewsSignals },
   { name: "google", fn: fetchGoogleSignals },
   { name: "twitter", fn: fetchTwitterSignals },
@@ -31,6 +40,12 @@ const SOURCES: SourceTask[] = [
   { name: "producthunt", fn: fetchProductHuntSignals },
   { name: "indiehackers", fn: fetchIndieHackersSignals },
   { name: "businessregistry", fn: fetchBusinessRegistrySignals },
+  { name: "bluesky", fn: fetchBlueskySignals },
+  { name: "github", fn: fetchGithubSignals },
+  { name: "stackexchange", fn: fetchStackExchangeSignals },
+  { name: "devto", fn: fetchDevToSignals },
+  { name: "lobsters", fn: fetchLobstersSignals },
+  { name: "ycombinator", fn: fetchYCSignals },
 ];
 
 export async function runLeadGenerationCycle(): Promise<{
@@ -39,8 +54,12 @@ export async function runLeadGenerationCycle(): Promise<{
   leadsResearched: number;
   leadsQualified: number;
   leadsNotified: number;
+  seeded: boolean;
 }> {
   const sql = db();
+
+  // Seed sample leads on the very first run so the dashboard is never empty
+  const seeded = await seedSampleLeadsIfEmpty();
 
   // Create a generation_runs row
   const run = await insertRow<GenerationRun>("generation_runs", {
@@ -48,7 +67,7 @@ export async function runLeadGenerationCycle(): Promise<{
     sources_attempted: SOURCES.map((s) => s.name),
   });
   const runId = run.id;
-  await log("info", "run_started", `Lead generation cycle starting`, { runId });
+  await log("info", "run_started", `Lead generation cycle starting`, { runId, seeded });
 
   // --- Phase 1: fetch from all sources in parallel ---
   const sourcesSucceeded: string[] = [];
@@ -169,6 +188,12 @@ export async function runLeadGenerationCycle(): Promise<{
         buying_signals: r.buying_signals,
         recommended_services: r.recommended_services,
         outreach_angle: r.outreach_angle,
+        outreach_email_draft: r.outreach_email_draft,
+        outreach_dm_draft: r.outreach_dm_draft,
+        next_actions: r.next_actions,
+        tech_stack: r.enrichment?.tech_stack ?? null,
+        social_links: r.enrichment?.social_links ?? null,
+        domain_age_estimate: r.enrichment?.domain_age_estimate ?? null,
         lead_score: r.lead_score,
         score_breakdown: r.score_breakdown,
         last_researched_at: new Date().toISOString(),
@@ -234,6 +259,7 @@ export async function runLeadGenerationCycle(): Promise<{
     leadsResearched: researched,
     leadsQualified: qualified,
     leadsNotified: notifiedCount,
+    seeded,
   };
 }
 
@@ -270,6 +296,12 @@ export async function runDeepResearchCycle(): Promise<{ researched: number }> {
         buying_signals: r.buying_signals,
         recommended_services: r.recommended_services,
         outreach_angle: r.outreach_angle,
+        outreach_email_draft: r.outreach_email_draft,
+        outreach_dm_draft: r.outreach_dm_draft,
+        next_actions: r.next_actions,
+        tech_stack: r.enrichment?.tech_stack ?? null,
+        social_links: r.enrichment?.social_links ?? null,
+        domain_age_estimate: r.enrichment?.domain_age_estimate ?? null,
         lead_score: r.lead_score,
         score_breakdown: r.score_breakdown,
         last_researched_at: new Date().toISOString(),

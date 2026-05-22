@@ -36,6 +36,8 @@ export async function GET() {
     "TELEGRAM_CHAT_ID",
     "OPENCORPORATES_API_TOKEN",
     "SCRAPER_API_KEY",
+    "GITHUB_TOKEN",
+    "APP_PASSWORD",
   ];
 
   const env: Record<string, "set" | "missing"> = {};
