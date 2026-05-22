@@ -1,61 +1,85 @@
 import { db } from "../db";
-import { sendSms } from "./twilio";
+import { sendNtfy } from "./ntfy";
+import { sendTelegram } from "./telegram";
 import { sendEmail } from "./resend";
 import type { Lead } from "../types";
 
 /**
- * Send the 4-hour batch notification.
- * - SMS: short summary with top 3 leads + dashboard link
- * - Email: full HTML report of every qualified lead in the batch
+ * Send the 4-hour batch notification across ALL configured free channels.
+ *
+ * Channels (all free):
+ *  - ntfy.sh — push notification on your phone (no account, no cost)
+ *  - Telegram — push with rich formatting + tap-through buttons
+ *  - Resend email — HTML report fallback / archive
+ *
+ * Each channel is independent; any one being missing won't block the others.
  */
 export async function notifyBatch(opts: {
   leads: Lead[];
   batchId: string;
   runId: string;
-}): Promise<{ smsOk: boolean; emailOk: boolean }> {
+}): Promise<{ ntfyOk: boolean; telegramOk: boolean; emailOk: boolean }> {
   const { leads, batchId, runId } = opts;
   if (leads.length === 0) {
     console.log("[notify] no leads to notify");
-    return { smsOk: false, emailOk: false };
+    return { ntfyOk: false, telegramOk: false, emailOk: false };
   }
 
   const dashboard = (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/$/, "");
   const top = [...leads].sort((a, b) => b.lead_score - a.lead_score).slice(0, 3);
-  const smsBody = buildSmsBody(top, leads.length, dashboard, batchId);
-  const emailHtml = buildEmailHtml(leads, dashboard, batchId, runId);
+  const topLead = top[0];
 
-  let smsOk = false;
-  const phoneTo = process.env.NOTIFY_TO_PHONE;
-  if (phoneTo) {
-    const smsRes = await sendSms(phoneTo, smsBody);
-    smsOk = smsRes.ok;
-    await db().from("notifications").insert({
-      channel: "sms",
-      recipient: phoneTo,
-      body: smsBody,
-      status: smsRes.ok ? "sent" : "failed",
-      provider_id: smsRes.sid ?? null,
-      provider_response: smsRes,
-      lead_ids: leads.map((l) => l.id),
-      batch_id: batchId,
-      sent_at: smsRes.ok ? new Date().toISOString() : null,
-    });
-  }
+  // ----- ntfy.sh push -----
+  const ntfyTitle = `${leads.length} new lead${leads.length === 1 ? "" : "s"} · top ${topLead.lead_score}/100`;
+  const ntfyBody = top
+    .map((l) => {
+      const who = l.company_name || l.person_name || "Unknown";
+      const tag = l.is_east_coast ? " 🌊" : "";
+      return `${l.lead_score} ${who}${tag}\n${(l.intent_signal ?? "").slice(0, 80)}`;
+    })
+    .join("\n\n");
 
+  const ntfyRes = await sendNtfy({
+    title: ntfyTitle,
+    message: ntfyBody,
+    priority: topLead.lead_score >= 85 ? 5 : 4,
+    tags: ["dart", "aventis"],
+    click: dashboard ? `${dashboard}/?batch=${batchId.slice(0, 8)}` : undefined,
+    actions: dashboard
+      ? [
+          { action: "view", label: "Open top lead", url: `${dashboard}/leads/${topLead.id}` },
+          { action: "view", label: "All leads", url: `${dashboard}/leads` },
+        ]
+      : undefined,
+  });
+
+  // ----- Telegram (optional, richer) -----
+  const tgRes = await sendTelegram({
+    text: buildTelegramHtml(top, leads.length, dashboard),
+    parseMode: "HTML",
+    buttons: dashboard
+      ? [
+          { text: "🎯 Open top lead", url: `${dashboard}/leads/${topLead.id}` },
+          { text: "📋 All leads", url: `${dashboard}/leads` },
+        ]
+      : undefined,
+  });
+
+  // ----- Email (archive + full report) -----
   let emailOk = false;
   const emailTo = process.env.NOTIFY_TO_EMAIL;
   if (emailTo) {
     const emRes = await sendEmail({
       to: emailTo,
-      subject: `[Aventis Leads] ${leads.length} new qualified lead${leads.length === 1 ? "" : "s"} — top score ${top[0].lead_score}/100`,
-      html: emailHtml,
+      subject: `[Aventis Leads] ${leads.length} new qualified lead${leads.length === 1 ? "" : "s"} — top score ${topLead.lead_score}/100`,
+      html: buildEmailHtml(leads, dashboard, batchId, runId),
     });
     emailOk = emRes.ok;
     await db().from("notifications").insert({
       channel: "email",
       recipient: emailTo,
       subject: `[Aventis Leads] ${leads.length} new qualified leads`,
-      body: emailHtml,
+      body: "(html — see Resend dashboard)",
       status: emRes.ok ? "sent" : "failed",
       provider_id: emRes.id ?? null,
       provider_response: emRes,
@@ -65,8 +89,31 @@ export async function notifyBatch(opts: {
     });
   }
 
-  // Mark leads as notified
-  if (smsOk || emailOk) {
+  // Log the push channels too
+  await db().from("notifications").insert({
+    channel: "ntfy",
+    recipient: process.env.NTFY_TOPIC ?? null,
+    subject: ntfyTitle,
+    body: ntfyBody,
+    status: ntfyRes.ok ? "sent" : "failed",
+    provider_response: ntfyRes,
+    lead_ids: leads.map((l) => l.id),
+    batch_id: batchId,
+    sent_at: ntfyRes.ok ? new Date().toISOString() : null,
+  });
+  await db().from("notifications").insert({
+    channel: "telegram",
+    recipient: process.env.TELEGRAM_CHAT_ID ?? null,
+    subject: ntfyTitle,
+    body: "(html)",
+    status: tgRes.ok ? "sent" : "failed",
+    provider_response: tgRes,
+    lead_ids: leads.map((l) => l.id),
+    batch_id: batchId,
+    sent_at: tgRes.ok ? new Date().toISOString() : null,
+  });
+
+  if (ntfyRes.ok || tgRes.ok || emailOk) {
     await db()
       .from("leads")
       .update({
@@ -77,20 +124,35 @@ export async function notifyBatch(opts: {
       .in("id", leads.map((l) => l.id));
   }
 
-  return { smsOk, emailOk };
+  return { ntfyOk: ntfyRes.ok, telegramOk: tgRes.ok, emailOk };
 }
 
-function buildSmsBody(top: Lead[], total: number, dashboard: string, batchId: string): string {
-  const lines = [`🎯 ${total} new lead${total === 1 ? "" : "s"} (Aventis)`];
+// ----------------------------
+// Telegram HTML (rich format)
+// ----------------------------
+function buildTelegramHtml(top: Lead[], total: number, dashboard: string): string {
+  const lines = [
+    `<b>🎯 ${total} new lead${total === 1 ? "" : "s"}</b> · Aventis`,
+    "",
+  ];
   for (const l of top) {
-    const who = l.company_name || l.person_name || "(unknown)";
-    const tag = l.is_east_coast ? "🌊EC" : "";
-    lines.push(`• ${l.lead_score}/100 ${tag} ${who}`);
+    const who = escapeHtml(l.company_name || l.person_name || "Unknown");
+    const tag = l.is_east_coast ? " 🌊EC" : "";
+    const url = dashboard ? `${dashboard}/leads/${l.id}` : "";
+    const signal = escapeHtml((l.intent_signal ?? "").slice(0, 140));
+    const services = (l.recommended_services ?? []).slice(0, 2).map(escapeHtml).join(", ");
+
+    lines.push(`<b>${l.lead_score}/100${tag}</b> · ${url ? `<a href="${url}">${who}</a>` : who}`);
+    lines.push(`<i>${signal}</i>`);
+    if (services) lines.push(`Fit: ${services}`);
+    lines.push("");
   }
-  if (dashboard) lines.push(`👉 ${dashboard}/?batch=${batchId.slice(0, 8)}`);
   return lines.join("\n");
 }
 
+// ----------------------------
+// Email HTML (full report)
+// ----------------------------
 function buildEmailHtml(leads: Lead[], dashboard: string, batchId: string, runId: string): string {
   const rows = leads
     .sort((a, b) => b.lead_score - a.lead_score)

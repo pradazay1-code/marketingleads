@@ -4,10 +4,14 @@ Autonomous lead generation + CRM for **Aventis Marketing** and **AventisAI**.
 
 This system runs by itself, 24/7, in the cloud. Every 4 hours it scans the public
 internet for people who need marketing services or white-label software, deeply
-researches each one with Claude, scores them, and sends you an SMS + email with
-the qualified leads. In between cycles it keeps researching to deepen each lead.
+researches each one with **free AI** (Google Gemini or Groq), scores them, and
+pushes notifications to your phone for **free** via ntfy.sh or Telegram. In
+between cycles it keeps researching to deepen each lead.
 
 You log into the CRM only when you want to work the leads.
+
+**Total monthly cost: $0** — every required service has a free tier that
+comfortably covers the system's usage. No credit cards needed.
 
 ---
 
@@ -21,9 +25,9 @@ You log into the CRM only when you want to work the leads.
 | Find leads via **hiring signals** | Indeed job postings for marketing roles = companies needing marketing help with budget |
 | Find leads via **new businesses** | OpenCorporates feeds of newly-registered East Coast businesses |
 | Find leads via **product launches** | ProductHunt & Show HN — founders looking for growth |
-| Deeply research each lead | Claude (Opus 4.7) reads the post + scrapes their website + produces a structured report |
+| Deeply research each lead | **Google Gemini 2.0 Flash (FREE)** reads the post + scrapes their website + produces a structured report. Groq Llama 3.3 70B as fallback |
 | Score each lead | 0–100 across intent, budget, decision-maker, fit, East Coast bonus |
-| Notify you when there are qualified leads | SMS (Twilio) + HTML email (Resend), every 4 hours |
+| Notify you when there are qualified leads | **ntfy.sh push (FREE, no account)** to your phone + Telegram (free) + HTML email backup, every 4 hours |
 | Track leads through your pipeline | Built-in CRM: New → Contacted → Qualified → Opportunity → Won |
 
 > **About Facebook groups specifically:** Facebook actively detects and bans
@@ -51,8 +55,8 @@ You log into the CRM only when you want to work the leads.
          │                                    │
          │                                    ▼
          │                          ┌──────────────────┐
-         │                          │ Claude Opus 4.7  │
-         │                          │ Deep research    │
+         │                          │ Gemini 2.0 Flash │
+         │                          │ (FREE) — research│
          │                          └────────┬─────────┘
          │                                    │
          │                                    ▼
@@ -62,8 +66,9 @@ You log into the CRM only when you want to work the leads.
          │                                    │
          │                                    ▼
          │                       ┌──────────────────────┐
-         │                       │ Twilio SMS + Resend  │
-         │                       │ Email to your phone  │
+         │                       │ ntfy.sh push + Tele- │
+         │                       │ gram + Resend email  │
+         │                       │ ALL FREE             │
          │                       └──────────────────────┘
          ▼
 ┌──────────────────┐
@@ -85,16 +90,22 @@ Twilio, and Resend. **No server you have to keep running.**
 
 ### 1. Sign up for the free services
 
-You'll need accounts at:
+All required services are 100% free — **no credit card needed for any of them**:
 
 | Service | What it does | Cost |
 |---|---|---|
-| [Supabase](https://supabase.com) | Database (always-on PostgreSQL) | Free tier is plenty |
-| [Anthropic](https://console.anthropic.com) | Claude AI research | Pay-as-you-go (~$0.03 per lead researched) |
-| [Twilio](https://twilio.com) | SMS to your phone | ~$1/month + $0.008 per SMS |
-| [Resend](https://resend.com) | Email backup notifications | Free for 3000/month |
-| [Netlify](https://netlify.com) | Hosting + cron | Free tier is plenty |
-| [Google Cloud](https://developers.google.com/custom-search) | Web search (optional but recommended) | 100 free searches/day |
+| [Supabase](https://supabase.com) | Database (always-on PostgreSQL) | **FREE** — 500MB DB, plenty |
+| [Google AI Studio](https://aistudio.google.com/apikey) | Gemini 2.0 Flash for AI research | **FREE** — 1,500 req/day, no card |
+| [ntfy.sh](https://ntfy.sh) | Push notifications to your phone | **FREE** — no account needed |
+| [Resend](https://resend.com) | Email backup notifications | **FREE** for 3,000/month |
+| [Netlify](https://netlify.com) | Hosting + cron | **FREE** tier is plenty |
+
+Optional extras (also all free):
+- [Groq](https://console.groq.com/keys) — AI fallback if Gemini hits limits, free
+- [Telegram BotFather](https://t.me/BotFather) — richer push notifications, free
+- [Google Custom Search](https://developers.google.com/custom-search) — 100 free searches/day
+- [Twitter Dev](https://developer.x.com) — free tier ~500k tweets/month
+- [ProductHunt API](https://api.producthunt.com/v2/oauth/applications) — free
 
 ### 2. Set up the database
 
@@ -105,7 +116,26 @@ You'll need accounts at:
    - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
 
-### 3. Deploy to Netlify
+### 3. Set up free phone push notifications
+
+**Option A — ntfy.sh (recommended, 60 seconds, no account):**
+1. Install the **ntfy** app on your phone (free, in App Store / Play Store)
+2. Pick a long random topic name — anything like `aventis-isaiah-x9k2p4qmnz`
+   - This string is effectively your password. Keep it private (anyone who knows
+     it can send you notifications). Make it long.
+3. In the ntfy app, tap "+" and subscribe to that exact string
+4. Set `NTFY_TOPIC` in your Netlify env vars to the same string
+5. Done — every batch will appear as a push notification on your phone
+
+**Option B — Telegram bot (optional, richer formatting):**
+1. Open Telegram → search **@BotFather** → `/newbot` → save the token
+2. Search **@userinfobot** → `/start` → it gives you your numeric chat ID
+3. Send any message to your new bot (so it can reply back to you)
+4. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` env vars
+
+You can use either, both, or neither (email-only is also fine).
+
+### 4. Deploy to Netlify
 
 1. Push this repo to GitHub (already done if you're reading this in the repo)
 2. In Netlify, click **Add new site → Import from Git → pick this repo**
@@ -115,14 +145,14 @@ You'll need accounts at:
 5. Deploy. After it's live, Netlify automatically activates the scheduled
    functions (you'll see them under **Functions → Scheduled**)
 
-### 4. Verify it's running
+### 5. Verify it's running
 
 - Open your Netlify URL → you should see the CRM dashboard
 - Go to **Settings** → enter your `CRON_SECRET` → click **Run now**
 - In ~60 seconds you should see leads appearing in the leads list
-- You should get an SMS + email if any leads scored ≥65
+- You should get a push notification + email if any leads scored ≥65
 
-That's it. The system now runs forever.
+That's it. The system now runs forever, completely free.
 
 ---
 
@@ -133,9 +163,9 @@ T+0:00  scheduled-lead-gen fires
         ├─ fetches signals from 8 sources in parallel (~30s)
         ├─ dedupes vs. existing leads
         ├─ pre-scores; drops obvious junk (<25 pre-score)
-        ├─ for top 15: calls Claude Opus to research deeply (~3-5 min)
+        ├─ for top 15: calls Gemini 2.0 Flash to research deeply (~3-5 min)
         ├─ updates each lead with summary, pain points, outreach angle
-        └─ for leads scoring ≥65: sends SMS + email batch
+        └─ for leads scoring ≥65: pushes notification + email batch
 
 T+0:30  scheduled-deep-research fires
         ├─ picks 5 still-pending leads
@@ -173,11 +203,16 @@ Each source is a single file in `lib/sources/` that exports a function returning
 
 For a typical day (6 cycles × ~10 leads researched each):
 
-- Claude: ~60 leads × $0.03 = **~$1.80/day**
-- Twilio SMS: 6 messages × $0.008 = **~$0.05/day**
-- Everything else: free tier
+- Gemini 2.0 Flash: ~60 calls/day vs. 1,500 daily free quota = **$0**
+- ntfy.sh push notifications: **$0**
+- Telegram bot: **$0**
+- Resend email: 6/day vs. 100/day free quota = **$0**
+- Supabase / Netlify: well within free tiers = **$0**
 
-So **~$60/month all-in** for fully autonomous lead generation.
+So **$0/month** for fully autonomous lead generation. If you ever exceed
+Gemini's free 1,500 requests/day, the system automatically falls back to
+Groq (also free). If you want to switch to a paid AI for higher quality
+later, just set `AI_PROVIDER` and add the key — no code changes needed.
 
 ---
 
@@ -230,8 +265,12 @@ lib/
   db.ts                    # Supabase clients (service + anon)
   keywords.ts              # Intent keyword matching + state detection
   scoring/leadScorer.ts    # Pre-research scoring
-  research/claudeResearch.ts  # Claude deep research
-  notify/                  # SMS + email channels
+  research/aiResearch.ts   # Gemini (default) / Groq research provider
+  notify/
+    ntfy.ts                # Free phone push notifications
+    telegram.ts            # Free Telegram bot push
+    resend.ts              # Free email backup
+    index.ts               # Multi-channel orchestrator
   sources/
     reddit.ts              # r/smallbusiness, r/Entrepreneur, etc
     hackernews.ts          # Ask HN, Show HN
@@ -251,10 +290,16 @@ supabase/
 ## Troubleshooting
 
 **"No leads yet"** — Did you run the SQL schema in Supabase? Did you set
-`ANTHROPIC_API_KEY`? Hit **Settings → Run now** and watch the result.
+`GEMINI_API_KEY`? Hit **Settings → Run now** and watch the result.
 
-**"No SMS arrived"** — Twilio trial accounts can only SMS verified numbers.
-Verify your number in the Twilio console, or upgrade to a paid number.
+**"No push notification arrived"** — Open the ntfy app and confirm you're
+subscribed to the EXACT same string as `NTFY_TOPIC`. Tap the topic in the
+app and check that notifications are enabled for it. Test it manually with
+`curl -d "test" ntfy.sh/your-topic-here`.
+
+**"Gemini said 'quota exceeded'"** — You hit the 1,500/day limit (unlikely
+unless something is misconfigured looping). Set `GROQ_API_KEY` and the
+system will automatically fall back to Groq.
 
 **"Source X keeps failing"** — Check the **Sources** section of Settings —
 the last error is shown. Most likely you're missing an optional API key

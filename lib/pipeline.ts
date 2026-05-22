@@ -2,7 +2,7 @@ import { db, log } from "./db";
 import type { RawSignal, Lead } from "./types";
 import { detectState, isEastCoast } from "./keywords";
 import { preScore } from "./scoring/leadScorer";
-import { researchLead } from "./research/claudeResearch";
+import { researchLead } from "./research/aiResearch";
 import { notifyBatch } from "./notify";
 
 import { fetchRedditSignals } from "./sources/reddit";

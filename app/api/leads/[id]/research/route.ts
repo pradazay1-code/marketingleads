@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { researchLead } from "@/lib/research/claudeResearch";
+import { researchLead } from "@/lib/research/aiResearch";
 import { isEastCoast } from "@/lib/keywords";
 import type { Lead } from "@/lib/types";
 
