@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import GlobalSearch from "./GlobalSearch";
+import InstallPrompt from "./InstallPrompt";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -89,7 +90,8 @@ export default function Sidebar({ authEnabled = false }: { authEnabled?: boolean
         })}
       </nav>
 
-      <div className="px-3 py-3 border-t border-slate-200 space-y-1">
+      <div className="px-3 py-3 border-t border-slate-200 space-y-2">
+        <InstallPrompt />
         {authEnabled && (
           <button
             onClick={logout}
