@@ -11,19 +11,17 @@ export type ResearchStatus = "pending" | "in_progress" | "completed" | "failed";
 
 export type SourceType =
   | "reddit"
-  | "hackernews"
   | "google"
   | "twitter"
   | "indeed"
   | "producthunt"
   | "indiehackers"
   | "businessregistry"
-  | "bluesky"
   | "github"
-  | "stackexchange"
-  | "devto"
-  | "lobsters"
-  | "ycombinator";
+  | "ycombinator"
+  | "googlemaps"
+  | "uspto"
+  | "newsfunding";
 
 export interface RawSignal {
   external_id: string;
@@ -34,6 +32,7 @@ export interface RawSignal {
   person_name?: string;
   company_name?: string;
   email?: string;
+  phone?: string;
   website?: string;
   twitter_handle?: string;
   linkedin_url?: string;
@@ -86,6 +85,16 @@ export interface Lead {
 
   lead_score: number;
   score_breakdown: Record<string, unknown> | null;
+  contactability_score: number;
+  has_email: boolean;
+  has_phone: boolean;
+  has_website: boolean;
+  has_linkedin: boolean;
+  contact_emails: string[] | null;
+  contact_phones: string[] | null;
+  email_confidence: "verified" | "probable" | "guess" | null;
+  best_email: string | null;
+  best_phone: string | null;
 
   status: LeadStatus;
   assigned_to: string | null;

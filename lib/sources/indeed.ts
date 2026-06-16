@@ -82,18 +82,25 @@ export async function fetchIndeedSignals(): Promise<RawSignal[]> {
           const title = $el.find('[data-testid="jobTitle"] span, h2.jobTitle span').first().text().trim();
           const location = $el.find('[data-testid="text-location"], .companyLocation').first().text().trim();
           const snippet = $el.find('.job-snippet, [data-testid="snippet"]').first().text().trim();
+          // Reject anything that's actually a staffing-agency / aggregator posting (no real business name)
           if (!company || !title) return;
+          if (/(staffing|recruiters|jobot|robert half|placement|aerotek)/i.test(company)) return;
+          // Reject if the "company" looks like a job-aggregator
+          if (/^(confidential|undisclosed)$/i.test(company)) return;
 
           const state = detectState(location);
+          // Indeed company-name often has a Glassdoor rating appended — strip
+          const cleanCompany = company.replace(/\s*\d\.\d+(\s*-\s*\d\.\d+)?\s*★?\s*$/i, "").trim();
+
           signals.push({
             external_id: `indeed:${jk}`,
             source: "indeed",
             source_url: `https://www.indeed.com/viewjob?jk=${jk}`,
-            source_post_content: `${company} is hiring: ${title}\nLocation: ${location}\n${snippet}`,
-            company_name: company,
+            source_post_content: `${cleanCompany} is hiring: ${title}\nLocation: ${location}\n\n${snippet}`,
+            company_name: cleanCompany,
             location,
-            matched_keywords: [q],
-            intent_signal: `${company} is hiring a ${title} in ${location}`,
+            matched_keywords: [q, "hiring marketer", "verified business"],
+            intent_signal: `${cleanCompany} is hiring a ${title} in ${location} (real company, has budget)`,
             intent_category: "hiring",
             raw: { title, location, snippet, query: q, east_coast: isEastCoast(state) },
           });

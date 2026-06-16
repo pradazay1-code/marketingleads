@@ -1,7 +1,7 @@
 -- =============================================================
 -- AVENTIS LEADS — migrations
--- Run this in Neon SQL Editor if you set up the DB before v2.
--- It is idempotent: safe to run multiple times.
+-- Run this in Neon SQL Editor if you set up the DB before v3.
+-- Idempotent: safe to run multiple times.
 -- New installs: just run schema.sql, you don't need this.
 -- =============================================================
 
@@ -13,7 +13,22 @@ alter table leads add column if not exists tech_stack text[];
 alter table leads add column if not exists social_links jsonb;
 alter table leads add column if not exists domain_age_estimate text;
 
--- v2: audit log for user actions
+-- v3: contactability + quality gate fields
+alter table leads add column if not exists contactability_score integer default 0;
+alter table leads add column if not exists has_email boolean default false;
+alter table leads add column if not exists has_phone boolean default false;
+alter table leads add column if not exists has_website boolean default false;
+alter table leads add column if not exists has_linkedin boolean default false;
+alter table leads add column if not exists contact_emails text[];
+alter table leads add column if not exists contact_phones text[];
+alter table leads add column if not exists email_confidence text;
+alter table leads add column if not exists best_email text;
+alter table leads add column if not exists best_phone text;
+
+create index if not exists idx_leads_contactability on leads (contactability_score desc);
+create index if not exists idx_leads_has_email on leads (has_email);
+
+-- v2 audit + sessions
 create table if not exists audit_log (
   id uuid primary key default gen_random_uuid(),
   actor text default 'anonymous',
@@ -26,7 +41,6 @@ create table if not exists audit_log (
 create index if not exists idx_audit_actor on audit_log (actor, created_at desc);
 create index if not exists idx_audit_resource on audit_log (resource_type, resource_id);
 
--- v2: saved views (saved filters)
 create table if not exists saved_views (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -35,7 +49,6 @@ create table if not exists saved_views (
   created_at timestamptz default now()
 );
 
--- v2: sessions (for simple cookie-based auth)
 create table if not exists sessions (
   id uuid primary key default gen_random_uuid(),
   token text unique not null,
@@ -47,12 +60,23 @@ create table if not exists sessions (
 create index if not exists idx_sessions_token on sessions (token);
 create index if not exists idx_sessions_expires on sessions (expires_at);
 
--- Insert seeds for new sources that didn't exist in v1
+-- v3: remove low-quality sources, add high-quality ones
+delete from sources where type in ('hackernews','lobsters','devto','stackexchange','bluesky','reddit_search');
+
 insert into sources (name, type, config) values
-  ('Bluesky — intent search', 'bluesky', '{"queries":["looking for a marketing agency","need help with marketing","need more leads"]}'),
+  ('Google Maps Places — East Coast service businesses', 'googlemaps', '{"industries":["hvac","law firm","dental","real estate","catering"]}'),
+  ('News — funding announcements', 'newsfunding', '{"queries":["raises seed","series A","series B"]}'),
   ('GitHub — new SaaS/startups', 'github', '{"topics":["saas","startup","marketing"]}'),
-  ('Stack Exchange — Webmasters', 'stackexchange', '{"sites":["webmasters","freelancing"]}'),
-  ('DEV.to — startup tag', 'devto', '{"tags":["startup","marketing","saas"]}'),
-  ('Lobste.rs — new posts', 'lobsters', '{}'),
-  ('Y Combinator — recent batches', 'ycombinator', '{"batches":["W25","S24","W24"]}')
+  ('Y Combinator — recent batches', 'ycombinator', '{"batches":["W25","S24","W24"]}'),
+  ('Reddit — Small Business', 'reddit', '{"subreddits":["smallbusiness","Entrepreneur","startups","marketing","SEO"]}'),
+  ('Indie Hackers — Posts', 'indiehackers', '{}'),
+  ('Business Registry — East Coast', 'businessregistry', '{}'),
+  ('Indeed — Marketing Job Postings', 'indeed', '{}'),
+  ('ProductHunt — New Launches', 'producthunt', '{}'),
+  ('Twitter/X — intent search', 'twitter', '{}'),
+  ('Google — Intent Search', 'google', '{}')
 on conflict (name) do nothing;
+
+-- v3: clean out historical leads from removed sources (optional — comment out
+-- the next line if you want to keep them around).
+update leads set status = 'archived' where source in ('hackernews','lobsters','devto','stackexchange','bluesky');

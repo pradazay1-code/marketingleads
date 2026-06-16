@@ -57,6 +57,16 @@ create table if not exists leads (
   -- scoring
   lead_score integer default 0,          -- 0-100
   score_breakdown jsonb,
+  contactability_score integer default 0,-- 0-100: how reachable is this lead
+  has_email boolean default false,
+  has_phone boolean default false,
+  has_website boolean default false,
+  has_linkedin boolean default false,
+  contact_emails text[],
+  contact_phones text[],
+  email_confidence text,                 -- 'verified' | 'probable' | 'guess'
+  best_email text,
+  best_phone text,
 
   -- pipeline state (CRM)
   status text default 'new',             -- 'new', 'contacted', 'qualified', 'opportunity', 'won', 'lost', 'archived'
@@ -77,6 +87,8 @@ create index if not exists idx_leads_created on leads (created_at desc);
 create index if not exists idx_leads_research_status on leads (research_status);
 create index if not exists idx_leads_east_coast on leads (is_east_coast);
 create index if not exists idx_leads_source on leads (source);
+create index if not exists idx_leads_contactability on leads (contactability_score desc);
+create index if not exists idx_leads_has_email on leads (has_email);
 
 -- -----------------------------------------------
 -- ACTIVITIES: every event on a lead (calls, notes, emails, status changes, research updates)
@@ -254,20 +266,18 @@ insert into keywords (phrase, category, weight) values
 on conflict (phrase) do nothing;
 
 insert into sources (name, type, config) values
-  ('Reddit — Small Business', 'reddit', '{"subreddits":["smallbusiness","Entrepreneur","startups","EntrepreneurRideAlong","marketing","SEO","sweatystartup","SaaS","b2bmarketing","advertising"],"limit":50}'),
-  ('Reddit — Intent Search', 'reddit_search', '{"queries":["looking for marketing agency","fired our marketing agency","need more leads"]}'),
-  ('Hacker News — Show & Ask', 'hackernews', '{"types":["show","ask"],"limit":100}'),
-  ('Google — Intent Search', 'google', '{"queries":["looking for marketing agency","need help with marketing","best white label software"]}'),
+  ('Google Maps Places — East Coast service businesses', 'googlemaps', '{"cities":["NY","Boston","Atlanta","Miami","Tampa","Charlotte"],"industries":["hvac","law firm","dental","real estate","catering","contractors"]}'),
+  ('News — funding announcements', 'newsfunding', '{"queries":["raises seed","series A","series B"]}'),
   ('Indeed — Marketing Job Postings', 'indeed', '{"queries":["marketing manager","marketing director","cmo"],"location":"east coast"}'),
-  ('ProductHunt — New Launches', 'producthunt', '{"limit":30}'),
-  ('Indie Hackers — Posts', 'indiehackers', '{"limit":50}'),
-  ('Bluesky — intent search', 'bluesky', '{"queries":["looking for a marketing agency","need help with marketing","need more leads"]}'),
-  ('GitHub — new SaaS/startups', 'github', '{"topics":["saas","startup","marketing"]}'),
-  ('Stack Exchange — Webmasters', 'stackexchange', '{"sites":["webmasters","freelancing"]}'),
-  ('DEV.to — startup tag', 'devto', '{"tags":["startup","marketing","saas"]}'),
-  ('Lobste.rs — new posts', 'lobsters', '{}'),
   ('Y Combinator — recent batches', 'ycombinator', '{"batches":["W25","S24","W24"]}'),
-  ('Business Registry — East Coast', 'businessregistry', '{"jurisdictions":["us_fl","us_ny","us_nj","us_pa","us_ma","us_ga","us_nc","us_sc","us_va","us_md","us_ct"]}')
+  ('ProductHunt — New Launches', 'producthunt', '{}'),
+  ('GitHub — new SaaS/startups', 'github', '{"topics":["saas","startup","marketing"]}'),
+  ('Reddit — Small Business', 'reddit', '{"subreddits":["smallbusiness","Entrepreneur","startups","marketing","SEO","sweatystartup","b2bmarketing"]}'),
+  ('Reddit — Intent Search', 'reddit_search', '{"queries":["looking for marketing agency","fired our marketing agency","need more leads"]}'),
+  ('Indie Hackers — Posts', 'indiehackers', '{}'),
+  ('Business Registry — East Coast', 'businessregistry', '{"jurisdictions":["us_fl","us_ny","us_nj","us_pa","us_ma","us_ga","us_nc","us_sc","us_va","us_md","us_ct"]}'),
+  ('Google — Intent Search', 'google', '{}'),
+  ('Twitter/X — intent search', 'twitter', '{}')
 on conflict (name) do nothing;
 
 -- v2 tables: audit log, saved views, sessions

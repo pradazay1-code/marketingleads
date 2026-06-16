@@ -11,6 +11,7 @@ interface SearchParams {
   east?: string;
   q?: string;
   min_score?: string;
+  contactable?: string;
 }
 
 export default async function LeadsPage({
@@ -32,6 +33,8 @@ export default async function LeadsPage({
   if (params.source) push("source = ?", params.source);
   if (params.east === "1") conditions.push("is_east_coast = true");
   if (params.min_score) push("lead_score >= ?", parseInt(params.min_score, 10));
+  // Contactable filter is ON by default — flip to "0" to see everything
+  if (params.contactable !== "0") conditions.push("contactability_score >= 45");
   if (params.q) {
     const q = `%${params.q}%`;
     sqlParams.push(q, q, q);
