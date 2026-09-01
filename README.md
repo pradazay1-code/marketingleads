@@ -2,39 +2,49 @@
 
 Autonomous lead generation + CRM for **Aventis Marketing** and **AventisAI**.
 
-This system runs by itself, 24/7, in the cloud. Every 4 hours it scans the public
-internet for people who need marketing services or white-label software, deeply
-researches each one with **free AI** (Google Gemini or Groq), scores them, and
-pushes notifications to your phone for **free** via ntfy.sh or Telegram. In
-between cycles it keeps researching to deepen each lead.
+Finds **junk removal** and **real estate** businesses on the East Coast that need
+marketing help, verifies you can actually reach them, researches each one with AI,
+and pushes qualified leads to your phone every 4 hours.
 
-You log into the CRM only when you want to work the leads.
+Runs by itself 24/7 on Netlify. You log in only when you want to work the leads.
 
-**Total monthly cost: $0** — every required service has a free tier that
-comfortably covers the system's usage. No credit cards needed.
+**Core stack is free.** Firecrawl, Google Places, and Mapbox have paid tiers but
+generous free allowances that cover this system's usage.
 
 ---
 
 ## What the system does
 
+> **Focus: junk removal & real estate only.** Every keyword, source, AI prompt,
+> and score is tuned for these two verticals. Anything else is filtered out
+> before it reaches your CRM.
+
 | What | How |
 |---|---|
-| Find leads from **Facebook-group-style** sources (without violating TOS) | Reddit (r/smallbusiness, r/Entrepreneur, r/marketing, etc), Indie Hackers, Hacker News — public forums where founders openly post needs |
-| Find leads from the broader web | Google Programmable Search across "looking for marketing agency", "fired our agency", etc |
-| Find leads via Twitter/X | Real-time intent search via the official API |
-| Find leads via **hiring signals** | Indeed job postings for marketing roles = companies needing marketing help with budget |
-| Find leads via **new businesses** | OpenCorporates feeds of newly-registered East Coast businesses |
-| Find leads via **product launches** | ProductHunt & Show HN — founders looking for growth |
-| Deeply research each lead | **Google Gemini 2.0 Flash (FREE)** reads the post + scrapes their website + produces a structured report. Groq Llama 3.3 70B as fallback |
-| Score each lead | 0–100 across intent, budget, decision-maker, fit, East Coast bonus |
-| Notify you when there are qualified leads | **ntfy.sh push (FREE, no account)** to your phone + Telegram (free) + HTML email backup, every 4 hours |
-| Track leads through your pipeline | Built-in CRM: New → Contacted → Qualified → Opportunity → Won |
+| Find **verified local businesses** | Google Places API — every result has name + address + phone + website + rating. Rotates 24 East Coast metros × 22 junk-removal/real-estate categories |
+| Find **operators in pain** | Firecrawl web search across "junk removal angi leads too expensive", "zillow leads not worth it", etc — plus it scrapes each result in the same call |
+| Find **growing businesses** | Indeed postings for junk removal drivers / real estate ISAs — hiring means demand exceeds capacity |
+| Find **brand-new entities** | OpenCorporates filings for new hauling/realty LLCs on the East Coast |
+| Find **public complaints** | Reddit (r/junkremoval, r/realtors, r/realestateinvesting) + X/Twitter intent search |
+| **Get contact info** | Firecrawl structured extraction pulls emails/phones out of JS-rendered sites; plus contact-page crawl and pattern guessing (`contact@`, `first.last@`) |
+| **Reject unreachable leads** | Contactability gate (0-100) — anything under 45 never enters the CRM |
+| Deeply research each lead | Gemini 2.0 Flash with vertical-specific economics baked into the prompt (Angi CPLs, Zillow costs, speed-to-lead math) |
+| Write your outreach | Email draft + DM draft + cold-call script, all referencing specifics from their site |
+| Map your territory | Mapbox geocoding + interactive map at `/map` — amber pins for junk removal, blue for real estate |
+| Notify you | ntfy.sh push + Telegram + email, every 4 hours |
+| Track your pipeline | Built-in CRM: New → Contacted → Qualified → Opportunity → Won |
 
-> **About Facebook groups specifically:** Facebook actively detects and bans
-> scrapers — any system that scrapes FB groups will be killed within days,
-> defeating "always running". This system uses *higher-quality* sources that
-> achieve the same goal legitimately. Reddit alone surfaces ~5–20 explicit
-> "need marketing help" posts per day across the subreddits we monitor.
+### The quality gate
+
+Every candidate must pass **two** filters before it enters your CRM:
+
+1. **Vertical gate** — is this junk removal or real estate? If not, discarded.
+2. **Contactability gate** — can you actually reach them? Scored 0-100:
+   email +30, phone +25, website +20, LinkedIn +10, real company name +10,
+   real person name +10, location +10. Below 45 → rejected and logged.
+
+Rejections are written to `system_log` as `rejected_uncontactable` /
+off-vertical so you can audit what got filtered.
 
 ---
 
@@ -50,7 +60,7 @@ comfortably covers the system's usage. No credit cards needed.
          │                                    ▼
          │                          ┌──────────────────┐
          │                          │ Source scanners  │
-         │                          │ Reddit, HN, etc  │
+         │                          │ Places, Firecrawl│
          │                          └────────┬─────────┘
          │                                    │
          │                                    ▼
@@ -61,7 +71,7 @@ comfortably covers the system's usage. No credit cards needed.
          │                                    │
          │                                    ▼
          │                          ┌──────────────────┐
-         │                          │ Supabase Postgres│
+         │                          │  Neon Postgres   │
          │                          └────────┬─────────┘
          │                                    │
          │                                    ▼
@@ -81,8 +91,8 @@ comfortably covers the system's usage. No credit cards needed.
 **Why Netlify (and not something else)?** You asked for Netlify, and it
 handles this well: their Scheduled Functions are a free, native cron with no
 infrastructure to manage. The Next.js CRM deploys with one click. The only
-external services you need are free-tier accounts at Supabase, Anthropic,
-Twilio, and Resend. **No server you have to keep running.**
+external services are Neon (database), Google AI Studio (research), and
+ntfy.sh (push). **No server you have to keep running.**
 
 ---
 
@@ -100,12 +110,19 @@ All required services are 100% free — **no credit card needed for any of them*
 | [Resend](https://resend.com) | Email backup notifications | **FREE** for 3,000/month |
 | [Netlify](https://netlify.com) | Hosting + cron | **FREE** tier is plenty |
 
-Optional extras (also all free):
-- [Groq](https://console.groq.com/keys) — AI fallback if Gemini hits limits, free
-- [Telegram BotFather](https://t.me/BotFather) — richer push notifications, free
-- [Google Custom Search](https://developers.google.com/custom-search) — 100 free searches/day
+**Strongly recommended** — these three transform lead quality:
+
+| Service | What it unlocks | Free allowance |
+|---|---|---|
+| [Google Places API](https://console.cloud.google.com) | Verified businesses with phone + address + website. The single best source. | $200/mo credit ≈ thousands of searches |
+| [Firecrawl](https://firecrawl.dev) | JS-rendered scraping + structured contact extraction + web search prospecting | Free tier available |
+| [Mapbox](https://account.mapbox.com) | Geocoding + the `/map` territory view | 100k geocodes/mo free |
+
+Optional extras (all free):
+- [Groq](https://console.groq.com/keys) — AI fallback if Gemini hits limits
+- [Telegram BotFather](https://t.me/BotFather) — richer push notifications
+- [Google Custom Search](https://developers.google.com/custom-search) — 100 searches/day
 - [Twitter Dev](https://developer.x.com) — free tier ~500k tweets/month
-- [ProductHunt API](https://api.producthunt.com/v2/oauth/applications) — free
 
 ### 2. Set up the database (Neon)
 
@@ -207,7 +224,7 @@ For a typical day (6 cycles × ~10 leads researched each):
 - ntfy.sh push notifications: **$0**
 - Telegram bot: **$0**
 - Resend email: 6/day vs. 100/day free quota = **$0**
-- Supabase / Netlify: well within free tiers = **$0**
+- Neon / Netlify: well within free tiers = **$0**
 
 So **$0/month** for fully autonomous lead generation. If you ever exceed
 Gemini's free 1,500 requests/day, the system automatically falls back to
@@ -261,35 +278,50 @@ netlify/functions/
   scheduled-heartbeat.ts   # Every hour: health check
 
 lib/
-  pipeline.ts              # Orchestrator: fetch → score → research → notify
-  db.ts                    # Supabase clients (service + anon)
-  keywords.ts              # Intent keyword matching + state detection
-  scoring/leadScorer.ts    # Pre-research scoring
-  research/aiResearch.ts   # Gemini (default) / Groq research provider
+  verticals.ts             # Junk removal + real estate config (the focus)
+  pipeline.ts              # Orchestrator: fetch → vertical gate → enrich →
+                           #   contactability gate → research → notify
+  db.ts                    # Neon Postgres client + query helpers
+  keywords.ts              # Vertical-specific keyword matching
+  seed.ts                  # 8 sample leads inserted on first run
+  quality/
+    contactability.ts      # The reachability gate (0-100)
+  scraping/
+    firecrawl.ts           # Firecrawl scrape / extract / search client
+  mapping/
+    mapbox.ts              # Geocoding + static map URLs + distance
+  enrichment/
+    emailFinder.ts         # Contact-page crawl + email pattern generation
+    companyResolver.ts     # Company name → website + LinkedIn
+  research/
+    enrichment.ts          # Firecrawl-first enrichment, cheerio fallback
+    aiResearch.ts          # Gemini/Groq with vertical economics in the prompt
+  scoring/leadScorer.ts    # Fast pre-research triage score
   notify/
-    ntfy.ts                # Free phone push notifications
-    telegram.ts            # Free Telegram bot push
-    resend.ts              # Free email backup
+    ntfy.ts                # Free phone push
+    telegram.ts            # Free Telegram push
+    resend.ts              # Free email
     index.ts               # Multi-channel orchestrator
   sources/
-    reddit.ts              # r/smallbusiness, r/Entrepreneur, etc
-    hackernews.ts          # Ask HN, Show HN
-    googleSearch.ts        # Google Programmable Search
-    twitter.ts             # X API v2
-    indeed.ts              # Job postings
-    producthunt.ts         # New launches
-    indiehackers.ts        # Forum posts
-    businessRegistry.ts    # Newly-registered businesses
+    googleMaps.ts          # Verified businesses (best source)
+    firecrawlProspector.ts # Pain-search + directory prospecting
+    indeed.ts              # Hiring signals in both verticals
+    businessRegistry.ts    # New hauling/realty LLCs
+    reddit.ts              # r/junkremoval, r/realtors, etc
+    redditEnhanced.ts      # Targeted Reddit intent search
+    googleSearch.ts        # Vertical intent queries
+    twitter.ts             # X intent search
 
-supabase/
-  schema.sql               # Run once in Supabase SQL editor
+db/
+  schema.sql               # Full schema — run once on a new database
+  migrations.sql           # Idempotent upgrade for existing databases
 ```
 
 ---
 
 ## Troubleshooting
 
-**"No leads yet"** — Did you run the SQL schema in Supabase? Did you set
+**"No leads yet"** — Did you run the SQL schema in Neon? Did you set
 `GEMINI_API_KEY`? Hit **Settings → Run now** and watch the result.
 
 **"No push notification arrived"** — Open the ntfy app and confirm you're

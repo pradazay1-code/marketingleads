@@ -6,6 +6,9 @@ export const dynamic = "force-dynamic";
 const COLUMNS = [
   "id",
   "lead_score",
+  "contactability_score",
+  "vertical",
+  "estimated_monthly_value",
   "status",
   "source",
   "company_name",
@@ -22,6 +25,8 @@ const COLUMNS = [
   "outreach_angle",
   "outreach_email_draft",
   "outreach_dm_draft",
+  "outreach_phone_script",
+  "uses_lead_marketplace",
   "research_summary",
   "source_url",
   "created_at",
@@ -45,6 +50,8 @@ export async function GET(req: NextRequest) {
   };
   if (params.get("status")) push("status = ?", params.get("status"));
   if (params.get("source")) push("source = ?", params.get("source"));
+  if (params.get("vertical")) push("vertical = ?", params.get("vertical"));
+  if (params.get("contactable") !== "0") conditions.push("contactability_score >= 45");
   if (params.get("east") === "1") conditions.push("is_east_coast = true");
   if (params.get("min_score")) push("lead_score >= ?", parseInt(params.get("min_score")!, 10));
 

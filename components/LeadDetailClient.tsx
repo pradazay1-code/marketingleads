@@ -128,10 +128,19 @@ export default function LeadDetailClient({
                 <h1 className="text-2xl font-bold text-slate-900">
                   {lead.company_name || lead.person_name || "Unknown"}
                 </h1>
+                {lead.vertical === "junk_removal" && (
+                  <span className="status-badge bg-amber-100 text-amber-800">Junk removal</span>
+                )}
+                {lead.vertical === "real_estate" && (
+                  <span className="status-badge bg-brand-100 text-brand-800">Real estate</span>
+                )}
                 {lead.is_east_coast && (
                   <span className="status-badge bg-blue-50 text-blue-700">East Coast</span>
                 )}
                 <span className="status-badge bg-slate-100 text-slate-700">{lead.source}</span>
+                {lead.uses_lead_marketplace && (
+                  <span className="status-badge bg-red-50 text-red-700">Pays for marketplace leads</span>
+                )}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600">
                 {lead.person_name && lead.company_name && (
@@ -258,6 +267,30 @@ export default function LeadDetailClient({
               <div className="text-sm text-slate-800 whitespace-pre-wrap">{lead.outreach_dm_draft}</div>
             </div>
           )}
+
+          {lead.outreach_phone_script && (
+            <div className="mt-3 bg-slate-50 border border-slate-200 rounded-md p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs uppercase font-medium text-slate-600">Cold-call opener</div>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(lead.outreach_phone_script ?? "")}
+                  className="text-xs text-brand-600 hover:underline"
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="text-sm text-slate-800 whitespace-pre-wrap">{lead.outreach_phone_script}</div>
+            </div>
+          )}
+
+          {lead.estimated_monthly_value ? (
+            <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-md p-4">
+              <div className="text-xs uppercase font-medium text-emerald-700">Estimated deal value</div>
+              <div className="text-2xl font-bold text-emerald-800 mt-0.5">
+                ${lead.estimated_monthly_value.toLocaleString()}<span className="text-sm font-normal">/month</span>
+              </div>
+            </div>
+          ) : null}
 
           {(lead.next_actions?.length ?? 0) > 0 && (
             <div className="mt-4">

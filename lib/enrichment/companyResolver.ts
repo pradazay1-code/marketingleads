@@ -38,11 +38,16 @@ const NON_BUSINESS_DOMAINS = new Set([
   "indeed.com",
   "glassdoor.com",
   "bbb.org",
-  "crunchbase.com",
-  "producthunt.com",
-  "ycombinator.com",
   "ziprecruiter.com",
   "monster.com",
+  "angi.com",
+  "homeadvisor.com",
+  "thumbtack.com",
+  "zillow.com",
+  "realtor.com",
+  "trulia.com",
+  "redfin.com",
+  "1800gotjunk.com",
 ]);
 
 function tldDomain(host: string): string {

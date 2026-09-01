@@ -41,15 +41,16 @@ export function preScore(signal: RawSignal, state: string | null): number {
   if (spamSignals.some((s) => text.includes(s))) score -= 20;
 
   // Source quality bias
+  // Verified-business sources score higher because they arrive with a real
+  // company name, phone, and address already attached.
   const sourceBoost: Record<string, number> = {
-    reddit: 8,
-    hackernews: 8,
-    twitter: 6,
+    googlemaps: 15,
+    firecrawl: 12,
     indeed: 12,
-    producthunt: 5,
-    businessregistry: 7,
+    businessregistry: 8,
+    reddit: 8,
     google: 6,
-    indiehackers: 7,
+    twitter: 6,
   };
   score += sourceBoost[signal.source] ?? 0;
 

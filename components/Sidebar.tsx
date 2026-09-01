@@ -13,6 +13,7 @@ import {
   LogOut,
   Menu,
   X,
+  Map as MapIcon,
 } from "lucide-react";
 import GlobalSearch from "./GlobalSearch";
 import InstallPrompt from "./InstallPrompt";
@@ -20,6 +21,7 @@ import InstallPrompt from "./InstallPrompt";
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", icon: Users },
+  { href: "/map", label: "Territory Map", icon: MapIcon },
   { href: "/pipeline", label: "Pipeline", icon: Target },
   { href: "/research-queue", label: "Research", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },

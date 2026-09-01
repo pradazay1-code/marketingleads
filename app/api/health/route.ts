@@ -21,6 +21,10 @@ export async function GET() {
   // -------- Environment variables --------
   const required = ["DATABASE_URL", "GEMINI_API_KEY", "NTFY_TOPIC", "CRON_SECRET"];
   const recommended = [
+    "FIRECRAWL_API_KEY",
+    "GOOGLE_PLACES_API_KEY",
+    "MAPBOX_TOKEN",
+    "NEXT_PUBLIC_MAPBOX_TOKEN",
     "RESEND_API_KEY",
     "NOTIFY_TO_EMAIL",
     "NOTIFY_FROM_EMAIL",
@@ -36,7 +40,6 @@ export async function GET() {
     "TELEGRAM_CHAT_ID",
     "OPENCORPORATES_API_TOKEN",
     "SCRAPER_API_KEY",
-    "GITHUB_TOKEN",
     "APP_PASSWORD",
   ];
 
@@ -188,7 +191,10 @@ export async function GET() {
           (SELECT COUNT(*) FROM leads WHERE research_status = 'pending')::int AS pending_research,
           (SELECT COUNT(*) FROM keywords WHERE enabled = true)::int AS active_keywords,
           (SELECT COUNT(*) FROM sources WHERE enabled = true)::int AS active_sources,
-          (SELECT COUNT(*) FROM notifications WHERE status = 'sent')::int AS notifications_sent
+          (SELECT COUNT(*) FROM notifications WHERE status = 'sent')::int AS notifications_sent,
+          (SELECT COUNT(*) FROM leads WHERE vertical = 'junk_removal')::int AS junk_removal_leads,
+          (SELECT COUNT(*) FROM leads WHERE vertical = 'real_estate')::int AS real_estate_leads,
+          (SELECT COUNT(*) FROM leads WHERE latitude IS NOT NULL)::int AS geocoded_leads
       `) as Array<Record<string, number>>;
       checks.data_counts = counts[0];
 

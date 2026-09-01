@@ -1,14 +1,12 @@
-import * as cheerio from "cheerio";
 import type { RawSignal } from "../types";
+import { classifyVertical } from "../verticals";
 
 /**
- * NEWLY-REGISTERED businesses — they have funding, intent, and zero marketing infrastructure.
+ * Newly-registered businesses via OpenCorporates.
  *
- * State business filing offices publish daily/weekly registrations. Each state's API
- * is different; we provide adapters for the highest-value East Coast states.
- *
- * Strategy: hit OpenCorporates' free tier (limited but works) for cross-state new entities.
- * For production scale, the user can sign up for state-level API access.
+ * v4: filtered to junk removal + real estate entities only. A brand-new
+ * hauling LLC or realty company is a perfect prospect — they have a legal
+ * entity, an address, and zero marketing infrastructure.
  */
 
 interface OCCompany {
@@ -25,9 +23,7 @@ interface OCCompany {
 }
 
 interface OCResponse {
-  results?: {
-    companies: OCCompany[];
-  };
+  results?: { companies: OCCompany[] };
 }
 
 const EAST_COAST_JURISDICTIONS = [
@@ -44,60 +40,117 @@ const EAST_COAST_JURISDICTIONS = [
   "us_ct",
 ];
 
+/** Name fragments that identify our two verticals in a registry filing */
+const VERTICAL_NAME_TERMS = [
+  // Junk removal
+  "junk",
+  "hauling",
+  "haul",
+  "cleanout",
+  "clean out",
+  "debris",
+  "dumpster",
+  "rubbish",
+  "disposal",
+  "removal",
+  "demolition",
+  // Real estate
+  "realty",
+  "real estate",
+  "properties",
+  "property management",
+  "homes",
+  "estates",
+  "brokerage",
+  "land co",
+];
+
 export async function fetchBusinessRegistrySignals(): Promise<RawSignal[]> {
-  const apiToken = process.env.OPENCORPORATES_API_TOKEN; // optional, raises limits
+  const apiToken = process.env.OPENCORPORATES_API_TOKEN;
   const signals: RawSignal[] = [];
   const today = new Date();
-  const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const dateRange = `${thirtyDaysAgo.toISOString().slice(0, 10)}:${today
+  const ninetyDaysAgo = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const dateRange = `${ninetyDaysAgo.toISOString().slice(0, 10)}:${today
     .toISOString()
     .slice(0, 10)}`;
 
-  for (const j of EAST_COAST_JURISDICTIONS) {
-    try {
-      const params = new URLSearchParams({
-        jurisdiction_code: j,
-        incorporation_date: dateRange,
-        per_page: "30",
-        order: "incorporation_date",
-        sort_order: "desc",
-      });
-      if (apiToken) params.set("api_token", apiToken);
+  // Rotate jurisdictions across cycles to spread out API usage
+  const epochHour = Math.floor(Date.now() / 3_600_000);
+  const jurisdictions = [
+    EAST_COAST_JURISDICTIONS[epochHour % EAST_COAST_JURISDICTIONS.length],
+    EAST_COAST_JURISDICTIONS[(epochHour + 4) % EAST_COAST_JURISDICTIONS.length],
+    EAST_COAST_JURISDICTIONS[(epochHour + 8) % EAST_COAST_JURISDICTIONS.length],
+  ];
 
-      const url = `https://api.opencorporates.com/v0.4/companies/search?${params.toString()}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.warn(`[businessRegistry] ${res.status} for ${j}`);
-        continue;
-      }
-      const data = (await res.json()) as OCResponse;
+  // Search directly for vertical terms instead of pulling every new LLC
+  const searchTerms = ["junk removal", "hauling", "cleanout", "realty", "property management"];
 
-      for (const item of data.results?.companies ?? []) {
-        const c = item.company;
-        const state = j.replace("us_", "").toUpperCase();
-        signals.push({
-          external_id: `oc:${j}:${c.company_number}`,
-          source: "businessregistry",
-          source_url: c.opencorporates_url,
-          source_post_content: `${c.name} — newly registered ${c.company_type} in ${state}, incorporated ${c.incorporation_date}. Address: ${c.registered_address_in_full ?? "N/A"}`,
-          source_post_at: c.incorporation_date,
-          company_name: c.name,
-          location: c.registered_address_in_full ?? undefined,
-          matched_keywords: ["new business"],
-          intent_signal: `Newly registered ${c.company_type} in ${state}: ${c.name}`,
-          intent_category: "launching",
-          raw: {
-            jurisdiction: j,
-            state,
-            company_number: c.company_number,
-            status: c.current_status,
-            incorporation_date: c.incorporation_date,
-          },
+  for (const j of jurisdictions) {
+    for (const term of searchTerms) {
+      try {
+        const params = new URLSearchParams({
+          q: term,
+          jurisdiction_code: j,
+          incorporation_date: dateRange,
+          per_page: "20",
+          order: "incorporation_date",
         });
+        if (apiToken) params.set("api_token", apiToken);
+
+        const url = `https://api.opencorporates.com/v0.4/companies/search?${params.toString()}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+        if (!res.ok) {
+          console.warn(`[businessRegistry] ${res.status} for ${j}/${term}`);
+          continue;
+        }
+        const data = (await res.json()) as OCResponse;
+
+        for (const item of data.results?.companies ?? []) {
+          const c = item.company;
+          const nameLower = c.name.toLowerCase();
+          // Double-check the name actually matches a vertical term
+          if (!VERTICAL_NAME_TERMS.some((t) => nameLower.includes(t))) continue;
+
+          const vertical = classifyVertical(c.name);
+          if (vertical === "other") continue;
+
+          const state = j.replace("us_", "").toUpperCase();
+          signals.push({
+            external_id: `oc:${j}:${c.company_number}`,
+            source: "businessregistry",
+            source_url: c.opencorporates_url,
+            source_post_content: [
+              `${c.name} — newly registered ${c.company_type} in ${state}`,
+              `Incorporated: ${c.incorporation_date}`,
+              `Address: ${c.registered_address_in_full ?? "not listed"}`,
+              "",
+              `Signal: brand-new ${vertical === "junk_removal" ? "junk removal / hauling" : "real estate"} entity with a legal address and almost certainly zero marketing infrastructure.`,
+            ].join("\n"),
+            source_post_at: c.incorporation_date,
+            company_name: c.name,
+            location: c.registered_address_in_full ?? `${state}`,
+            matched_keywords: [
+              "new business",
+              "just registered",
+              vertical === "junk_removal" ? "junk removal" : "real estate",
+            ],
+            intent_signal: `Newly registered ${c.company_type} in ${state}: ${c.name} — no marketing presence yet`,
+            intent_category: "launching",
+            raw: {
+              vertical,
+              jurisdiction: j,
+              state,
+              company_number: c.company_number,
+              status: c.current_status,
+              incorporation_date: c.incorporation_date,
+              search_term: term,
+            },
+          });
+        }
+        await new Promise((r) => setTimeout(r, 700));
+      } catch (err) {
+        console.error(`[businessRegistry] error for ${j}/${term}:`, err);
       }
-      await new Promise((r) => setTimeout(r, 600));
-    } catch (err) {
-      console.error(`[businessRegistry] error for ${j}:`, err);
     }
   }
 

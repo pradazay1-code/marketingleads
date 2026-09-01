@@ -1,6 +1,6 @@
 import { db, countRows } from "@/lib/db";
 import Link from "next/link";
-import { TrendingUp, Users, Target, Sparkles, Clock, MapPin } from "lucide-react";
+import { TrendingUp, Users, Target, Sparkles, Clock, Trash2, Home, DollarSign } from "lucide-react";
 import type { Lead, GenerationRun } from "@/lib/types";
 import SetupNeeded, { type SetupState } from "@/components/SetupNeeded";
 import SystemStatus from "@/components/SystemStatus";
@@ -25,13 +25,19 @@ async function getStats() {
   const since24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [all, last24, qualified, eastCoast, openOpps, topLeads, latestRuns, sourcesRows] =
+  const [all, last24, qualified, junkCount, reCount, pipelineRows, topLeads, latestRuns, sourcesRows] =
     await Promise.all([
       countRows("leads"),
       countRows("leads", "WHERE created_at >= $1", [since24]),
       countRows("leads", "WHERE lead_score >= 65 AND created_at >= $1", [since7d]),
-      countRows("leads", "WHERE is_east_coast = true AND created_at >= $1", [since7d]),
-      countRows("opportunities", "WHERE stage NOT IN ('closed_won','closed_lost')"),
+      countRows("leads", "WHERE vertical = 'junk_removal' AND status <> 'archived'"),
+      countRows("leads", "WHERE vertical = 'real_estate' AND status <> 'archived'"),
+      sql`
+        SELECT COALESCE(SUM(estimated_monthly_value), 0)::int AS total
+        FROM leads
+        WHERE status IN ('new','contacted','qualified','opportunity')
+          AND estimated_monthly_value IS NOT NULL
+      `,
       sql`
         SELECT * FROM leads
         ORDER BY lead_score DESC, created_at DESC
@@ -48,8 +54,18 @@ async function getStats() {
       `,
     ]);
 
+  const pipelineValue =
+    (pipelineRows as unknown as Array<{ total: number }>)[0]?.total ?? 0;
+
   return {
-    totals: { all, last24, qualified7d: qualified, eastCoast7d: eastCoast, openOpps },
+    totals: {
+      all,
+      last24,
+      qualified7d: qualified,
+      junkCount,
+      reCount,
+      pipelineValue,
+    },
     topLeads: topLeads as unknown as Lead[],
     latestRun: ((latestRuns as unknown as GenerationRun[])[0]) ?? null,
     latestRuns: latestRuns as unknown as GenerationRun[],
@@ -118,10 +134,16 @@ export default async function DashboardPage() {
 
   const { totals, topLeads, latestRun, latestRuns, sources } = stats;
   const stats_cards = [
-    { label: "Leads (last 24h)", value: totals.last24, icon: Sparkles, color: "text-brand-600" },
+    { label: "New (24h)", value: totals.last24, icon: Sparkles, color: "text-brand-600" },
     { label: "Qualified (7d)", value: totals.qualified7d, icon: TrendingUp, color: "text-emerald-600" },
-    { label: "East Coast (7d)", value: totals.eastCoast7d, icon: MapPin, color: "text-amber-600" },
-    { label: "Open opportunities", value: totals.openOpps, icon: Target, color: "text-violet-600" },
+    { label: "Junk removal", value: totals.junkCount, icon: Trash2, color: "text-amber-600" },
+    { label: "Real estate", value: totals.reCount, icon: Home, color: "text-brand-600" },
+    {
+      label: "Pipeline value / mo",
+      value: `$${totals.pipelineValue.toLocaleString()}`,
+      icon: DollarSign,
+      color: "text-emerald-600",
+    },
     { label: "Total leads", value: totals.all, icon: Users, color: "text-slate-600" },
   ];
 
@@ -130,9 +152,9 @@ export default async function DashboardPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-slate-500 mt-1">
-            Aventis Leads · autonomous discovery for Aventis Marketing & AventisAI
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            Junk removal &amp; real estate prospects · East Coast · always-on
           </p>
         </div>
         <SystemStatus lastRun={latestRun} sources={sources} />
@@ -144,9 +166,9 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-slate-500 mt-1">
-            Aventis Leads · autonomous discovery for Aventis Marketing & AventisAI
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            Junk removal &amp; real estate prospects · East Coast · always-on
           </p>
         </div>
         <div className="text-right text-sm">
@@ -157,16 +179,14 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         {stats_cards.map((s) => {
           const Icon = s.icon;
           return (
-            <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-sm transition">
-              <div className="flex items-center justify-between">
-                <Icon className={`w-5 h-5 ${s.color}`} />
-              </div>
-              <div className="mt-3 text-3xl font-bold text-slate-900">{s.value}</div>
-              <div className="text-xs text-slate-500 mt-1">{s.label}</div>
+            <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 hover:shadow-sm transition">
+              <Icon className={`w-5 h-5 ${s.color}`} />
+              <div className="mt-2 sm:mt-3 text-xl sm:text-2xl font-bold text-slate-900 truncate">{s.value}</div>
+              <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5">{s.label}</div>
             </div>
           );
         })}

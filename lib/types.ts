@@ -10,18 +10,15 @@ export type LeadStatus =
 export type ResearchStatus = "pending" | "in_progress" | "completed" | "failed";
 
 export type SourceType =
-  | "reddit"
-  | "google"
-  | "twitter"
-  | "indeed"
-  | "producthunt"
-  | "indiehackers"
-  | "businessregistry"
-  | "github"
-  | "ycombinator"
   | "googlemaps"
-  | "uspto"
-  | "newsfunding";
+  | "firecrawl"
+  | "reddit"
+  | "indeed"
+  | "businessregistry"
+  | "google"
+  | "twitter";
+
+export type Vertical = "junk_removal" | "real_estate" | "other";
 
 export interface RawSignal {
   external_id: string;
@@ -63,6 +60,10 @@ export interface Lead {
   is_east_coast: boolean;
   industry: string | null;
   company_size: string | null;
+  vertical: Vertical;
+  latitude: number | null;
+  longitude: number | null;
+  geocoded_address: string | null;
 
   matched_keywords: string[] | null;
   intent_signal: string | null;
@@ -77,7 +78,11 @@ export interface Lead {
   outreach_angle: string | null;
   outreach_email_draft: string | null;
   outreach_dm_draft: string | null;
+  outreach_phone_script: string | null;
+  estimated_monthly_value: number | null;
   next_actions: string[] | null;
+  uses_lead_marketplace: boolean | null;
+  services_offered: string[] | null;
   tech_stack: string[] | null;
   social_links: Record<string, string> | null;
   domain_age_estimate: string | null;

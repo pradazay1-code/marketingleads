@@ -1,26 +1,31 @@
 import type { RawSignal } from "../types";
 import { loadKeywords, matchKeywords, detectState } from "../keywords";
+import { classifyVertical } from "../verticals";
 
 /**
- * Targeted Reddit search across multiple high-intent queries — runs in
- * ADDITION to fetchRedditSignals (which scans new posts per subreddit).
- * This catches keyword-matched posts even from subreddits we don't monitor.
+ * Targeted Reddit search across vertical-specific high-intent queries.
+ * Runs in ADDITION to the per-subreddit feed scan, catching posts in
+ * subreddits we don't monitor directly.
+ *
+ * v4: every query is junk-removal or real-estate specific.
  */
-
 const SEARCH_QUERIES = [
-  "looking for marketing agency",
-  "need marketing help",
-  "fired our marketing agency",
-  "marketing agency recommendations",
-  "need more leads",
-  "white label software",
-  "white label saas",
-  "ai chatbot for my business",
-  "best crm for small business",
-  "best marketing automation",
-  "low conversion rate help",
-  "need a new website",
-  "agency ripped me off",
+  // Junk removal
+  '"junk removal" "angi" leads expensive',
+  '"junk removal business" marketing',
+  '"junk removal" "need more customers"',
+  '"junk removal" thumbtack worth it',
+  '"estate cleanout" business marketing',
+  '"hauling business" getting customers',
+  '"junk removal" google ads',
+  // Real estate
+  '"zillow leads" not worth it realtor',
+  '"real estate" CRM recommendations agent',
+  '"realtor" "lead generation" help',
+  '"real estate team" marketing agency',
+  '"property management" marketing leads',
+  '"real estate" follow up automation',
+  '"motivated seller leads" marketing',
 ];
 
 interface RedditChild {
@@ -50,10 +55,11 @@ export async function fetchRedditSearchSignals(): Promise<RawSignal[]> {
   for (const q of SEARCH_QUERIES) {
     try {
       const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(
-        `"${q}"`
-      )}&sort=new&t=week&limit=25`;
+        q
+      )}&sort=new&t=month&limit=25`;
       const res = await fetch(url, {
         headers: { "User-Agent": UA, Accept: "application/json" },
+        signal: AbortSignal.timeout(12000),
       });
       if (!res.ok) {
         console.warn(`[reddit-search] ${res.status} for "${q}"`);
@@ -65,6 +71,10 @@ export async function fetchRedditSearchSignals(): Promise<RawSignal[]> {
         if (p.over_18 || seen.has(p.id)) continue;
         seen.add(p.id);
         const text = `${p.title}\n${p.selftext ?? ""}`;
+
+        const vertical = classifyVertical(text);
+        if (vertical === "other") continue;
+
         const matches = matchKeywords(text, keywords);
         const top =
           matches.length > 0
@@ -76,14 +86,17 @@ export async function fetchRedditSearchSignals(): Promise<RawSignal[]> {
           external_id: `reddit:${p.id}`,
           source: "reddit",
           source_url: `https://www.reddit.com${p.permalink}`,
-          source_post_content: text.slice(0, 4000),
+          source_post_content: text.slice(0, 5000),
           source_post_at: new Date(p.created_utc * 1000).toISOString(),
           person_name: p.author,
           location: state ?? undefined,
           matched_keywords: matches.length > 0 ? matches.map((m) => m.phrase) : [q],
           intent_signal: top.snippet,
-          intent_category: top.category as RawSignal["intent_category"],
+          intent_category: top.category.startsWith("pain")
+            ? "pain"
+            : (top.category as RawSignal["intent_category"]),
           raw: {
+            vertical,
             subreddit: p.subreddit,
             title: p.title,
             comments: p.num_comments,

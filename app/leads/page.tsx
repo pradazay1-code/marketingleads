@@ -12,6 +12,7 @@ interface SearchParams {
   q?: string;
   min_score?: string;
   contactable?: string;
+  vertical?: string;
 }
 
 export default async function LeadsPage({
@@ -31,6 +32,7 @@ export default async function LeadsPage({
   };
   if (params.status) push("status = ?", params.status);
   if (params.source) push("source = ?", params.source);
+  if (params.vertical) push("vertical = ?", params.vertical);
   if (params.east === "1") conditions.push("is_east_coast = true");
   if (params.min_score) push("lead_score >= ?", parseInt(params.min_score, 10));
   // Contactable filter is ON by default — flip to "0" to see everything
@@ -53,8 +55,10 @@ export default async function LeadsPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">Leads</h1>
-        <p className="text-slate-500 mt-1">Every prospect discovered by the system, ranked by score.</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Leads</h1>
+        <p className="text-slate-500 mt-1 text-sm">
+          Junk removal &amp; real estate prospects, ranked by score. Only contactable leads shown by default.
+        </p>
       </div>
 
       <LeadsFilter />

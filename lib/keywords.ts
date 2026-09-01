@@ -1,7 +1,7 @@
 import { db } from "./db";
 import type { Keyword } from "./types";
 
-// East-coast state codes — leads from these states get a +15 score boost
+// East-coast state codes — leads from these states get a score boost
 export const EAST_COAST_STATES = new Set([
   "ME", "NH", "VT", "MA", "RI", "CT", "NY", "NJ", "PA",
   "DE", "MD", "DC", "VA", "WV", "NC", "SC", "GA", "FL",
@@ -22,31 +22,71 @@ export const STATE_NAMES_TO_CODE: Record<string, string> = {
   wyoming: "WY", "washington dc": "DC", "washington d.c.": "DC",
 };
 
-// Hard-coded fallback in case the DB keywords table hasn't loaded yet.
+/**
+ * Keywords are now HYPER-FOCUSED on junk removal + real estate.
+ * Generic marketing keywords are gone — they produced too much noise.
+ */
 export const FALLBACK_KEYWORDS: Pick<Keyword, "phrase" | "category" | "weight">[] = [
-  { phrase: "looking for a marketing agency", category: "intent", weight: 10 },
-  { phrase: "need help with marketing", category: "intent", weight: 9 },
-  { phrase: "hire a marketing agency", category: "intent", weight: 10 },
-  { phrase: "marketing agency recommendations", category: "intent", weight: 9 },
-  { phrase: "need a marketing consultant", category: "intent", weight: 9 },
-  { phrase: "looking for marketing services", category: "intent", weight: 9 },
-  { phrase: "marketing freelancer", category: "intent", weight: 7 },
-  { phrase: "white label software", category: "service", weight: 10 },
-  { phrase: "white label saas", category: "service", weight: 10 },
-  { phrase: "white label crm", category: "service", weight: 9 },
-  { phrase: "need more leads", category: "pain", weight: 9 },
-  { phrase: "not getting leads", category: "pain", weight: 9 },
-  { phrase: "low conversion rate", category: "pain", weight: 8 },
-  { phrase: "fired our agency", category: "complaint", weight: 9 },
+  // ── JUNK REMOVAL: identity ──────────────────────────────────────────
+  { phrase: "junk removal", category: "vertical_junk", weight: 10 },
+  { phrase: "junk hauling", category: "vertical_junk", weight: 10 },
+  { phrase: "hauling business", category: "vertical_junk", weight: 9 },
+  { phrase: "estate cleanout", category: "vertical_junk", weight: 9 },
+  { phrase: "property cleanout", category: "vertical_junk", weight: 9 },
+  { phrase: "debris removal", category: "vertical_junk", weight: 8 },
+  { phrase: "dumpster rental", category: "vertical_junk", weight: 8 },
+  { phrase: "furniture removal", category: "vertical_junk", weight: 8 },
+
+  // ── JUNK REMOVAL: pain ──────────────────────────────────────────────
+  { phrase: "angi leads", category: "pain_junk", weight: 10 },
+  { phrase: "angies list leads", category: "pain_junk", weight: 10 },
+  { phrase: "thumbtack leads", category: "pain_junk", weight: 10 },
+  { phrase: "cost per lead too high", category: "pain_junk", weight: 9 },
+  { phrase: "1-800-got-junk", category: "pain_junk", weight: 9 },
+  { phrase: "competing with got junk", category: "pain_junk", weight: 10 },
+  { phrase: "missed calls losing jobs", category: "pain_junk", weight: 9 },
+  { phrase: "slow season junk removal", category: "pain_junk", weight: 8 },
+
+  // ── REAL ESTATE: identity ───────────────────────────────────────────
+  { phrase: "real estate agent", category: "vertical_re", weight: 9 },
+  { phrase: "realtor", category: "vertical_re", weight: 9 },
+  { phrase: "real estate team", category: "vertical_re", weight: 10 },
+  { phrase: "real estate brokerage", category: "vertical_re", weight: 10 },
+  { phrase: "property management", category: "vertical_re", weight: 9 },
+  { phrase: "real estate investor", category: "vertical_re", weight: 8 },
+  { phrase: "listing agent", category: "vertical_re", weight: 8 },
+
+  // ── REAL ESTATE: pain ───────────────────────────────────────────────
+  { phrase: "zillow leads", category: "pain_re", weight: 10 },
+  { phrase: "zillow premier agent", category: "pain_re", weight: 10 },
+  { phrase: "realtor.com leads", category: "pain_re", weight: 10 },
+  { phrase: "lead response time", category: "pain_re", weight: 9 },
+  { phrase: "leads falling through", category: "pain_re", weight: 9 },
+  { phrase: "need a better crm", category: "pain_re", weight: 10 },
+  { phrase: "idx website", category: "pain_re", weight: 8 },
+  { phrase: "seller leads", category: "pain_re", weight: 9 },
+  { phrase: "motivated seller leads", category: "pain_re", weight: 9 },
+  { phrase: "follow up sequence", category: "pain_re", weight: 8 },
+  { phrase: "sphere of influence", category: "pain_re", weight: 7 },
+
+  // ── SHARED: buying intent (only counted when a vertical also matches) ─
+  { phrase: "looking for a marketing agency", category: "intent", weight: 9 },
+  { phrase: "need help with marketing", category: "intent", weight: 8 },
+  { phrase: "need more leads", category: "intent", weight: 9 },
+  { phrase: "not getting leads", category: "intent", weight: 9 },
+  { phrase: "fired our agency", category: "complaint", weight: 10 },
+  { phrase: "fired our marketing agency", category: "complaint", weight: 10 },
   { phrase: "looking to replace our agency", category: "complaint", weight: 10 },
-  { phrase: "agency ripped me off", category: "complaint", weight: 9 },
-  { phrase: "ai marketing tool", category: "service", weight: 8 },
-  { phrase: "ai for my business", category: "service", weight: 8 },
+  { phrase: "white label crm", category: "service", weight: 10 },
+  { phrase: "white label software", category: "service", weight: 9 },
+  { phrase: "ai phone answering", category: "service", weight: 9 },
+  { phrase: "ai receptionist", category: "service", weight: 9 },
+  { phrase: "google local services ads", category: "service", weight: 9 },
+  { phrase: "local seo", category: "service", weight: 8 },
+  { phrase: "google business profile", category: "service", weight: 7 },
+  { phrase: "need more reviews", category: "service", weight: 7 },
+  { phrase: "just started my business", category: "launch", weight: 7 },
   { phrase: "just launched", category: "launch", weight: 5 },
-  { phrase: "grand opening", category: "launch", weight: 6 },
-  { phrase: "hiring a marketing manager", category: "hiring", weight: 8 },
-  { phrase: "hiring a marketing director", category: "hiring", weight: 8 },
-  { phrase: "chatbot for my business", category: "service", weight: 7 },
 ];
 
 let cached: { at: number; data: Pick<Keyword, "phrase" | "category" | "weight">[] } | null = null;
@@ -73,10 +113,6 @@ export interface KeywordMatch {
   snippet: string;
 }
 
-/**
- * Scan text for keyword matches. Returns matches with a small snippet
- * of surrounding context so we can show *why* this lead surfaced.
- */
 export function matchKeywords(
   text: string,
   keywords: Pick<Keyword, "phrase" | "category" | "weight">[]
@@ -100,13 +136,21 @@ export function matchKeywords(
   return out;
 }
 
+/**
+ * True only if at least one match identifies the lead as junk-removal or
+ * real-estate. Generic "need marketing help" alone is no longer enough —
+ * we require vertical relevance.
+ */
+export function hasVerticalMatch(matches: KeywordMatch[]): boolean {
+  return matches.some((m) => m.category.startsWith("vertical_") || m.category.startsWith("pain_"));
+}
+
 export function detectState(text: string): string | null {
   if (!text) return null;
   const lower = text.toLowerCase();
   for (const [name, code] of Object.entries(STATE_NAMES_TO_CODE)) {
     if (lower.includes(name)) return code;
   }
-  // Look for ", XX" state codes
   const m = text.match(/,\s*([A-Z]{2})\b/);
   if (m && Object.values(STATE_NAMES_TO_CODE).includes(m[1])) return m[1];
   return null;

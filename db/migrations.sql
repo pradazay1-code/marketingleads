@@ -1,11 +1,11 @@
 -- =============================================================
 -- AVENTIS LEADS — migrations
--- Run this in Neon SQL Editor if you set up the DB before v3.
+-- Run this in Neon SQL Editor to upgrade an existing database.
 -- Idempotent: safe to run multiple times.
--- New installs: just run schema.sql, you don't need this.
+-- New installs: just run schema.sql instead.
 -- =============================================================
 
--- v2: deep-research fields
+-- ── v2: deep-research fields ─────────────────────────────────
 alter table leads add column if not exists outreach_email_draft text;
 alter table leads add column if not exists outreach_dm_draft text;
 alter table leads add column if not exists next_actions text[];
@@ -13,7 +13,7 @@ alter table leads add column if not exists tech_stack text[];
 alter table leads add column if not exists social_links jsonb;
 alter table leads add column if not exists domain_age_estimate text;
 
--- v3: contactability + quality gate fields
+-- ── v3: contactability + quality gate ────────────────────────
 alter table leads add column if not exists contactability_score integer default 0;
 alter table leads add column if not exists has_email boolean default false;
 alter table leads add column if not exists has_phone boolean default false;
@@ -28,7 +28,20 @@ alter table leads add column if not exists best_phone text;
 create index if not exists idx_leads_contactability on leads (contactability_score desc);
 create index if not exists idx_leads_has_email on leads (has_email);
 
--- v2 audit + sessions
+-- ── v4: vertical focus (junk removal + real estate) + mapping ─
+alter table leads add column if not exists vertical text default 'other';
+alter table leads add column if not exists latitude double precision;
+alter table leads add column if not exists longitude double precision;
+alter table leads add column if not exists geocoded_address text;
+alter table leads add column if not exists outreach_phone_script text;
+alter table leads add column if not exists estimated_monthly_value integer;
+alter table leads add column if not exists uses_lead_marketplace boolean;
+alter table leads add column if not exists services_offered text[];
+
+create index if not exists idx_leads_vertical on leads (vertical);
+create index if not exists idx_leads_geo on leads (latitude, longitude);
+
+-- ── v2 support tables ────────────────────────────────────────
 create table if not exists audit_log (
   id uuid primary key default gen_random_uuid(),
   actor text default 'anonymous',
@@ -60,23 +73,73 @@ create table if not exists sessions (
 create index if not exists idx_sessions_token on sessions (token);
 create index if not exists idx_sessions_expires on sessions (expires_at);
 
--- v3: remove low-quality sources, add high-quality ones
-delete from sources where type in ('hackernews','lobsters','devto','stackexchange','bluesky','reddit_search');
+-- ── v4: purge sources that no longer fit the two verticals ────
+delete from sources where type in (
+  'hackernews','lobsters','devto','stackexchange','bluesky',
+  'github','ycombinator','producthunt','indiehackers','newsfunding','reddit_search'
+);
 
 insert into sources (name, type, config) values
-  ('Google Maps Places — East Coast service businesses', 'googlemaps', '{"industries":["hvac","law firm","dental","real estate","catering"]}'),
-  ('News — funding announcements', 'newsfunding', '{"queries":["raises seed","series A","series B"]}'),
-  ('GitHub — new SaaS/startups', 'github', '{"topics":["saas","startup","marketing"]}'),
-  ('Y Combinator — recent batches', 'ycombinator', '{"batches":["W25","S24","W24"]}'),
-  ('Reddit — Small Business', 'reddit', '{"subreddits":["smallbusiness","Entrepreneur","startups","marketing","SEO"]}'),
-  ('Indie Hackers — Posts', 'indiehackers', '{}'),
-  ('Business Registry — East Coast', 'businessregistry', '{}'),
-  ('Indeed — Marketing Job Postings', 'indeed', '{}'),
-  ('ProductHunt — New Launches', 'producthunt', '{}'),
-  ('Twitter/X — intent search', 'twitter', '{}'),
-  ('Google — Intent Search', 'google', '{}')
+  ('Google Maps — junk removal + real estate', 'googlemaps', '{"verticals":["junk_removal","real_estate"]}'),
+  ('Firecrawl — vertical prospecting', 'firecrawl', '{"mode":["pain_search","directory"]}'),
+  ('Reddit — vertical subreddits + search', 'reddit', '{"subreddits":["junkremoval","realtors","realestateinvesting","sweatystartup","PropertyManagement"]}'),
+  ('Indeed — vertical hiring signals', 'indeed', '{"roles":["junk removal driver","real estate ISA","transaction coordinator"]}'),
+  ('Business Registry — new hauling/realty LLCs', 'businessregistry', '{"terms":["junk removal","hauling","cleanout","realty","property management"]}'),
+  ('Google — vertical intent search', 'google', '{}'),
+  ('Twitter/X — vertical intent search', 'twitter', '{}')
 on conflict (name) do nothing;
 
--- v3: clean out historical leads from removed sources (optional — comment out
--- the next line if you want to keep them around).
-update leads set status = 'archived' where source in ('hackernews','lobsters','devto','stackexchange','bluesky');
+-- ── v4: replace the keyword set with vertical-specific terms ──
+-- Old generic marketing keywords produced too much off-target noise.
+delete from keywords where category in ('intent','pain','service','launch','hiring','complaint')
+  and phrase not in (
+    'looking for a marketing agency','need help with marketing','need more leads',
+    'not getting leads','fired our agency','fired our marketing agency',
+    'looking to replace our agency','white label crm','white label software',
+    'ai phone answering','ai receptionist','google local services ads',
+    'local seo','google business profile','need more reviews','just started my business'
+  );
+
+insert into keywords (phrase, category, weight) values
+  ('junk removal', 'vertical_junk', 10),
+  ('junk hauling', 'vertical_junk', 10),
+  ('hauling business', 'vertical_junk', 9),
+  ('estate cleanout', 'vertical_junk', 9),
+  ('property cleanout', 'vertical_junk', 9),
+  ('debris removal', 'vertical_junk', 8),
+  ('dumpster rental', 'vertical_junk', 8),
+  ('furniture removal', 'vertical_junk', 8),
+  ('angi leads', 'pain_junk', 10),
+  ('angies list leads', 'pain_junk', 10),
+  ('thumbtack leads', 'pain_junk', 10),
+  ('cost per lead too high', 'pain_junk', 9),
+  ('1-800-got-junk', 'pain_junk', 9),
+  ('competing with got junk', 'pain_junk', 10),
+  ('missed calls losing jobs', 'pain_junk', 9),
+  ('slow season junk removal', 'pain_junk', 8),
+  ('real estate agent', 'vertical_re', 9),
+  ('realtor', 'vertical_re', 9),
+  ('real estate team', 'vertical_re', 10),
+  ('real estate brokerage', 'vertical_re', 10),
+  ('property management', 'vertical_re', 9),
+  ('real estate investor', 'vertical_re', 8),
+  ('listing agent', 'vertical_re', 8),
+  ('zillow leads', 'pain_re', 10),
+  ('zillow premier agent', 'pain_re', 10),
+  ('realtor.com leads', 'pain_re', 10),
+  ('lead response time', 'pain_re', 9),
+  ('leads falling through', 'pain_re', 9),
+  ('need a better crm', 'pain_re', 10),
+  ('idx website', 'pain_re', 8),
+  ('seller leads', 'pain_re', 9),
+  ('motivated seller leads', 'pain_re', 9),
+  ('follow up sequence', 'pain_re', 8),
+  ('sphere of influence', 'pain_re', 7)
+on conflict (phrase) do nothing;
+
+-- ── v4: archive leads from retired sources and off-vertical leads ──
+update leads set status = 'archived'
+where source in (
+  'hackernews','lobsters','devto','stackexchange','bluesky',
+  'github','ycombinator','producthunt','indiehackers','newsfunding'
+) and status not in ('won','opportunity');

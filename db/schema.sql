@@ -32,6 +32,10 @@ create table if not exists leads (
   is_east_coast boolean default false,
   industry text,
   company_size text,
+  vertical text default 'other',          -- 'junk_removal' | 'real_estate' | 'other'
+  latitude double precision,
+  longitude double precision,
+  geocoded_address text,
 
   -- intent
   matched_keywords text[],
@@ -48,7 +52,11 @@ create table if not exists leads (
   outreach_angle text,                   -- AI-generated personalized opening
   outreach_email_draft text,             -- AI-generated cold email draft
   outreach_dm_draft text,                -- AI-generated DM/short message draft
+  outreach_phone_script text,            -- AI-generated cold-call opener
+  estimated_monthly_value integer,       -- realistic monthly retainer for this lead
   next_actions text[],                   -- AI-suggested next steps
+  uses_lead_marketplace boolean,         -- Angi/Thumbtack/Zillow badges detected
+  services_offered text[],               -- services scraped from their site
   tech_stack text[],                     -- detected tech stack
   social_links jsonb,                    -- detected social media URLs
   domain_age_estimate text,              -- domain age from Wayback
@@ -89,6 +97,8 @@ create index if not exists idx_leads_east_coast on leads (is_east_coast);
 create index if not exists idx_leads_source on leads (source);
 create index if not exists idx_leads_contactability on leads (contactability_score desc);
 create index if not exists idx_leads_has_email on leads (has_email);
+create index if not exists idx_leads_vertical on leads (vertical);
+create index if not exists idx_leads_geo on leads (latitude, longitude);
 
 -- -----------------------------------------------
 -- ACTIVITIES: every event on a lead (calls, notes, emails, status changes, research updates)
@@ -228,56 +238,71 @@ create trigger opportunities_updated before update on opportunities
 -- SEED: default keywords and sources
 -- =============================================================
 insert into keywords (phrase, category, weight) values
-  ('looking for a marketing agency', 'intent', 10),
-  ('need help with marketing', 'intent', 9),
-  ('hire a marketing agency', 'intent', 10),
-  ('marketing agency recommendations', 'intent', 9),
-  ('need a marketing consultant', 'intent', 9),
-  ('looking for marketing services', 'intent', 9),
-  ('marketing freelancer', 'intent', 7),
-  ('white label software', 'service', 10),
-  ('white label saas', 'service', 10),
-  ('white label crm', 'service', 9),
-  ('white label automation', 'service', 9),
-  ('need a new website', 'service', 7),
-  ('redesign my website', 'service', 7),
-  ('low conversion rate', 'pain', 8),
-  ('not getting leads', 'pain', 9),
-  ('need more leads', 'pain', 9),
-  ('struggling to get clients', 'pain', 8),
-  ('seo help', 'service', 6),
-  ('google ads help', 'service', 7),
-  ('facebook ads help', 'service', 7),
-  ('marketing automation', 'service', 7),
-  ('ai for my business', 'service', 8),
-  ('ai marketing tool', 'service', 8),
-  ('chatbot for my business', 'service', 7),
-  ('just launched', 'launch', 5),
-  ('just opened', 'launch', 5),
-  ('new business', 'launch', 4),
-  ('grand opening', 'launch', 6),
-  ('hiring a marketing manager', 'hiring', 8),
-  ('hiring a marketing director', 'hiring', 8),
-  ('cmo search', 'hiring', 7),
-  ('agency ripped me off', 'complaint', 9),
-  ('agency was terrible', 'complaint', 9),
-  ('fired our agency', 'complaint', 9),
-  ('looking to replace our agency', 'complaint', 10)
+  -- JUNK REMOVAL: identity
+  ('junk removal', 'vertical_junk', 10),
+  ('junk hauling', 'vertical_junk', 10),
+  ('hauling business', 'vertical_junk', 9),
+  ('estate cleanout', 'vertical_junk', 9),
+  ('property cleanout', 'vertical_junk', 9),
+  ('debris removal', 'vertical_junk', 8),
+  ('dumpster rental', 'vertical_junk', 8),
+  ('furniture removal', 'vertical_junk', 8),
+  -- JUNK REMOVAL: pain
+  ('angi leads', 'pain_junk', 10),
+  ('angies list leads', 'pain_junk', 10),
+  ('thumbtack leads', 'pain_junk', 10),
+  ('cost per lead too high', 'pain_junk', 9),
+  ('1-800-got-junk', 'pain_junk', 9),
+  ('competing with got junk', 'pain_junk', 10),
+  ('missed calls losing jobs', 'pain_junk', 9),
+  ('slow season junk removal', 'pain_junk', 8),
+  -- REAL ESTATE: identity
+  ('real estate agent', 'vertical_re', 9),
+  ('realtor', 'vertical_re', 9),
+  ('real estate team', 'vertical_re', 10),
+  ('real estate brokerage', 'vertical_re', 10),
+  ('property management', 'vertical_re', 9),
+  ('real estate investor', 'vertical_re', 8),
+  ('listing agent', 'vertical_re', 8),
+  -- REAL ESTATE: pain
+  ('zillow leads', 'pain_re', 10),
+  ('zillow premier agent', 'pain_re', 10),
+  ('realtor.com leads', 'pain_re', 10),
+  ('lead response time', 'pain_re', 9),
+  ('leads falling through', 'pain_re', 9),
+  ('need a better crm', 'pain_re', 10),
+  ('idx website', 'pain_re', 8),
+  ('seller leads', 'pain_re', 9),
+  ('motivated seller leads', 'pain_re', 9),
+  ('follow up sequence', 'pain_re', 8),
+  ('sphere of influence', 'pain_re', 7),
+  -- SHARED intent / service
+  ('looking for a marketing agency', 'intent', 9),
+  ('need help with marketing', 'intent', 8),
+  ('need more leads', 'intent', 9),
+  ('not getting leads', 'intent', 9),
+  ('fired our agency', 'complaint', 10),
+  ('fired our marketing agency', 'complaint', 10),
+  ('looking to replace our agency', 'complaint', 10),
+  ('white label crm', 'service', 10),
+  ('white label software', 'service', 9),
+  ('ai phone answering', 'service', 9),
+  ('ai receptionist', 'service', 9),
+  ('google local services ads', 'service', 9),
+  ('local seo', 'service', 8),
+  ('google business profile', 'service', 7),
+  ('need more reviews', 'service', 7),
+  ('just started my business', 'launch', 7)
 on conflict (phrase) do nothing;
 
 insert into sources (name, type, config) values
-  ('Google Maps Places — East Coast service businesses', 'googlemaps', '{"cities":["NY","Boston","Atlanta","Miami","Tampa","Charlotte"],"industries":["hvac","law firm","dental","real estate","catering","contractors"]}'),
-  ('News — funding announcements', 'newsfunding', '{"queries":["raises seed","series A","series B"]}'),
-  ('Indeed — Marketing Job Postings', 'indeed', '{"queries":["marketing manager","marketing director","cmo"],"location":"east coast"}'),
-  ('Y Combinator — recent batches', 'ycombinator', '{"batches":["W25","S24","W24"]}'),
-  ('ProductHunt — New Launches', 'producthunt', '{}'),
-  ('GitHub — new SaaS/startups', 'github', '{"topics":["saas","startup","marketing"]}'),
-  ('Reddit — Small Business', 'reddit', '{"subreddits":["smallbusiness","Entrepreneur","startups","marketing","SEO","sweatystartup","b2bmarketing"]}'),
-  ('Reddit — Intent Search', 'reddit_search', '{"queries":["looking for marketing agency","fired our marketing agency","need more leads"]}'),
-  ('Indie Hackers — Posts', 'indiehackers', '{}'),
-  ('Business Registry — East Coast', 'businessregistry', '{"jurisdictions":["us_fl","us_ny","us_nj","us_pa","us_ma","us_ga","us_nc","us_sc","us_va","us_md","us_ct"]}'),
-  ('Google — Intent Search', 'google', '{}'),
-  ('Twitter/X — intent search', 'twitter', '{}')
+  ('Google Maps — junk removal + real estate', 'googlemaps', '{"verticals":["junk_removal","real_estate"]}'),
+  ('Firecrawl — vertical prospecting', 'firecrawl', '{"mode":["pain_search","directory"]}'),
+  ('Reddit — vertical subreddits + search', 'reddit', '{"subreddits":["junkremoval","realtors","realestateinvesting","sweatystartup","PropertyManagement"]}'),
+  ('Indeed — vertical hiring signals', 'indeed', '{"roles":["junk removal driver","real estate ISA","transaction coordinator"]}'),
+  ('Business Registry — new hauling/realty LLCs', 'businessregistry', '{"terms":["junk removal","hauling","cleanout","realty","property management"]}'),
+  ('Google — vertical intent search', 'google', '{}'),
+  ('Twitter/X — vertical intent search', 'twitter', '{}')
 on conflict (name) do nothing;
 
 -- v2 tables: audit log, saved views, sessions

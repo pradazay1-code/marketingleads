@@ -6,16 +6,17 @@ import { Search } from "lucide-react";
 
 const SOURCES = [
   "googlemaps",
-  "newsfunding",
+  "firecrawl",
   "indeed",
-  "ycombinator",
-  "producthunt",
   "businessregistry",
-  "github",
   "reddit",
-  "indiehackers",
   "twitter",
   "google",
+];
+
+const VERTICALS = [
+  { value: "junk_removal", label: "Junk removal" },
+  { value: "real_estate", label: "Real estate" },
 ];
 const STATUSES = ["new", "contacted", "qualified", "opportunity", "won", "lost", "archived"];
 
@@ -62,6 +63,16 @@ export default function LeadsFilter() {
       >
         <option value="">All sources</option>
         {SOURCES.map((s) => <option key={s}>{s}</option>)}
+      </select>
+      <select
+        value={params.get("vertical") ?? ""}
+        onChange={(e) => update({ vertical: e.target.value || null })}
+        className="border border-slate-200 rounded-md px-3 py-2 text-sm bg-white"
+      >
+        <option value="">Both verticals</option>
+        {VERTICALS.map((v) => (
+          <option key={v.value} value={v.value}>{v.label}</option>
+        ))}
       </select>
       <select
         value={params.get("status") ?? ""}
